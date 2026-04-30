@@ -152,7 +152,6 @@ pub fn mark_used(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)] // wired up in Phase 2 (item create dialog)
 pub fn insert_item(
     conn: &mut Connection,
     key: &[u8; KEY_LEN],
@@ -184,6 +183,45 @@ pub fn insert_item(
         )?;
     }
     tx.commit()?;
+    Ok(())
+}
+
+pub fn update_item(
+    conn: &mut Connection,
+    key: &[u8; KEY_LEN],
+    id: &str,
+    title: &str,
+    kind: &str,
+    value: &str,
+    notes: Option<&str>,
+    tags: &[String],
+) -> Result<()> {
+    let payload = EncryptedPayload {
+        value: value.to_string(),
+        notes: notes.map(|s| s.to_string()),
+    };
+    let payload_json = serde_json::to_vec(&payload)?;
+    let sealed = seal(key, &payload_json)?;
+    let now = unix_millis();
+
+    let tx = conn.transaction()?;
+    tx.execute(
+        "UPDATE items SET title = ?1, kind = ?2, payload = ?3, updated_at = ?4 WHERE id = ?5",
+        params![title, kind, sealed, now, id],
+    )?;
+    tx.execute("DELETE FROM tags WHERE item_id = ?1", params![id])?;
+    for tag in tags {
+        tx.execute(
+            "INSERT OR IGNORE INTO tags(item_id, tag) VALUES (?1, ?2)",
+            params![id, tag],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn delete_item(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM items WHERE id = ?1", params![id])?;
     Ok(())
 }
 

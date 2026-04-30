@@ -48,8 +48,6 @@ impl VaultState {
         self.data_dir.join(DB_FILENAME)
     }
 
-    /// Runs `f` with a reference to the open connection and key. Returns
-    /// `VaultError::Locked` if the vault is not unlocked or the mutex is poisoned.
     fn with_conn<T, F>(&self, f: F) -> Result<T>
     where
         F: FnOnce(&Connection, &[u8; KEY_LEN]) -> Result<T>,
@@ -57,6 +55,17 @@ impl VaultState {
         let inner = self.inner.lock().map_err(|_| VaultError::Locked)?;
         let conn = inner.conn.as_ref().ok_or(VaultError::Locked)?;
         let key = inner.key.as_ref().ok_or(VaultError::Locked)?;
+        f(conn, key)
+    }
+
+    fn with_conn_mut<T, F>(&self, f: F) -> Result<T>
+    where
+        F: FnOnce(&mut Connection, &[u8; KEY_LEN]) -> Result<T>,
+    {
+        let mut inner = self.inner.lock().map_err(|_| VaultError::Locked)?;
+        let Inner { conn, key } = &mut *inner;
+        let conn = conn.as_mut().ok_or(VaultError::Locked)?;
+        let key: &[u8; KEY_LEN] = key.as_deref().ok_or(VaultError::Locked)?;
         f(conn, key)
     }
 
@@ -155,6 +164,35 @@ impl VaultState {
 
     pub fn list_items(&self) -> Result<Vec<Item>> {
         self.with_conn(|conn, key| db::list_items(conn, key))
+    }
+
+    pub fn create_item(
+        &self,
+        title: &str,
+        kind: &str,
+        value: &str,
+        notes: Option<&str>,
+        tags: &[String],
+    ) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        self.with_conn_mut(|conn, key| db::insert_item(conn, key, &id, title, kind, value, notes, tags))?;
+        Ok(id)
+    }
+
+    pub fn update_item(
+        &self,
+        id: &str,
+        title: &str,
+        kind: &str,
+        value: &str,
+        notes: Option<&str>,
+        tags: &[String],
+    ) -> Result<()> {
+        self.with_conn_mut(|conn, key| db::update_item(conn, key, id, title, kind, value, notes, tags))
+    }
+
+    pub fn delete_item(&self, id: &str) -> Result<()> {
+        self.with_conn(|conn, _key| db::delete_item(conn, id))
     }
 
     pub fn set_favorite(&self, id: &str, favorite: bool) -> Result<()> {

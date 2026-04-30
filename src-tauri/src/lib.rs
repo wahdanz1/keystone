@@ -5,13 +5,29 @@ mod vault;
 
 use std::sync::Arc;
 
-use tauri::{Manager, State};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, State,
+};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::db::Item;
 use crate::error::Result;
 use crate::vault::{VaultState, VaultStatus};
 
 type VaultStateRef<'a> = State<'a, Arc<VaultState>>;
+
+fn toggle_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_visible().unwrap_or(false) {
+            window.hide().ok();
+        } else {
+            window.show().ok();
+            window.set_focus().ok();
+        }
+    }
+}
 
 #[tauri::command]
 fn vault_status(state: VaultStateRef<'_>) -> Result<VaultStatus> {
@@ -39,6 +55,36 @@ fn items_list(state: VaultStateRef<'_>) -> Result<Vec<Item>> {
 }
 
 #[tauri::command]
+fn item_create(
+    state: VaultStateRef<'_>,
+    title: String,
+    kind: String,
+    value: String,
+    notes: Option<String>,
+    tags: Vec<String>,
+) -> Result<String> {
+    state.create_item(&title, &kind, &value, notes.as_deref(), &tags)
+}
+
+#[tauri::command]
+fn item_update(
+    state: VaultStateRef<'_>,
+    id: String,
+    title: String,
+    kind: String,
+    value: String,
+    notes: Option<String>,
+    tags: Vec<String>,
+) -> Result<()> {
+    state.update_item(&id, &title, &kind, &value, notes.as_deref(), &tags)
+}
+
+#[tauri::command]
+fn item_delete(state: VaultStateRef<'_>, id: String) -> Result<()> {
+    state.delete_item(&id)
+}
+
+#[tauri::command]
 fn item_set_favorite(state: VaultStateRef<'_>, id: String, favorite: bool) -> Result<()> {
     state.set_favorite(&id, favorite)
 }
@@ -52,6 +98,15 @@ fn item_mark_used(state: VaultStateRef<'_>, id: String) -> Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        toggle_window(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -59,7 +114,50 @@ pub fn run() {
                 .expect("could not resolve app data dir");
             std::fs::create_dir_all(&data_dir).ok();
             app.manage(Arc::new(VaultState::new(data_dir)));
+
+            // Global hotkey: Ctrl+Shift+K (Cmd+Shift+K on macOS) toggles the window.
+            app.global_shortcut().register("CmdOrCtrl+Shift+K")?;
+
+            // System tray
+            let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide Keystone", true, None::<&str>)?;
+            let lock = MenuItem::with_id(app, "lock", "Lock Vault", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_hide, &lock, &quit])?;
+
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .tooltip("Keystone")
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show_hide" => toggle_window(app),
+                    "lock" => {
+                        let vault = app.state::<Arc<VaultState>>();
+                        vault.lock().ok();
+                        app.emit("vault:locked", ()).ok();
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_window(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                window.hide().ok();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             vault_status,
@@ -67,6 +165,9 @@ pub fn run() {
             vault_unlock,
             vault_lock,
             items_list,
+            item_create,
+            item_update,
+            item_delete,
             item_set_favorite,
             item_mark_used,
         ])
