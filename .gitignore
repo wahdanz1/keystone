@@ -31,6 +31,9 @@ src-tauri/gen/schemas/
 *.swp
 *.swo
 
+# Claude Code session memory
+.claude/
+
 # OS junk
 .DS_Store
 Thumbs.db
