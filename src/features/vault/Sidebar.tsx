@@ -26,7 +26,7 @@ export function Sidebar({ items, query, selectedId, onQueryChange, onSelect, onC
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-card">
       <div className="flex items-center gap-2 border-b border-border p-3">
         <Input
-          placeholder="Search keys, snippets, tags…"
+          placeholder="Filter items…"
           leadingIcon={<LuSearch />}
           value={query}
           onChange={(e) => onQueryChange(e.currentTarget.value)}

@@ -126,36 +126,50 @@ export function ItemView({ item, onCopy, onToggleFavorite, onEdit, onDelete }: I
 
 function ValueCard({ item, onCopy }: { item: Item; onCopy: (item: Item) => void }) {
   const [revealed, setRevealed] = useState(item.kind !== "api_key");
+  const [copied, setCopied] = useState(false);
   const isMasked = item.kind === "api_key" && !revealed;
   const display = isMasked ? "•".repeat(Math.min(item.value.length, 32)) : item.value;
   const isMultiline = item.value.includes("\n") || item.kind === "snippet" || item.kind === "command";
 
+  function handleCopy() {
+    onCopy(item);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
-    <Card>
-      <CardContent className="flex items-stretch gap-2 p-3">
-        <pre
-          className={
-            "selectable flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2.5 font-mono text-sm text-foreground" +
-            (isMultiline ? " whitespace-pre" : " whitespace-pre-wrap break-all")
-          }
-        >
-          {display}
-        </pre>
-        <div className="flex flex-col gap-1">
-          {item.kind === "api_key" && (
-            <IconButton
-              aria-label={revealed ? "Hide value" : "Reveal value"}
-              onClick={() => setRevealed((v) => !v)}
-            >
-              {revealed ? <LuEyeOff /> : <LuEye />}
-            </IconButton>
-          )}
-          <Button onClick={() => onCopy(item)} size="sm" variant="secondary">
-            <LuCopy /> Copy
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <>
+      <Card>
+        <CardContent className="flex items-stretch gap-2 p-3">
+          <pre
+            className={
+              "selectable flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2.5 font-mono text-sm text-foreground" +
+              (isMultiline ? " whitespace-pre" : " whitespace-pre-wrap break-all")
+            }
+          >
+            {display}
+          </pre>
+          <div className="flex flex-col gap-1">
+            {item.kind === "api_key" && (
+              <IconButton
+                aria-label={revealed ? "Hide value" : "Reveal value"}
+                onClick={() => setRevealed((v) => !v)}
+              >
+                {revealed ? <LuEyeOff /> : <LuEye />}
+              </IconButton>
+            )}
+            <Button onClick={handleCopy} size="sm" variant="secondary">
+              <LuCopy /> Copy
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      {copied && (
+        <p className="mt-1.5 text-right text-xs text-success">
+          Copied to clipboard
+        </p>
+      )}
+    </>
   );
 }
 
