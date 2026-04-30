@@ -23,7 +23,7 @@ Requires: [Rust + Cargo](https://rustup.rs), [Node.js 20+](https://nodejs.org), 
 
 ## License
 
-Copyright © 2024 Daniel Wahlgren.
+Copyright © 2026 Daniel Wahlgren.
 Licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).
 
 You may use, copy, modify, and redistribute this software for **non-commercial purposes** only.
