@@ -1,30 +1,43 @@
 # Keystone
 
 A local-first desktop vault for API keys, dev snippets, and reference items.
-Built with [Tauri](https://tauri.app) (Rust backend) + React + TypeScript.
 
 ## Features
 
-- **Encrypted at rest** — ChaCha20-Poly1305 per-record encryption; master password
-  never leaves your machine. Key derived with Argon2id.
-- **No network** — no backend, no telemetry, no cloud sync.
-- **Searchable sidebar** — filter by title, value, notes, or tags; favorites pinned at top.
-- **System tray + global hotkey** — summon the vault from anywhere (Phase 2).
-- **Auto-lock** — locks after 15 minutes of inactivity.
+- Encrypted at rest — ChaCha20-Poly1305 per-record encryption, master password never leaves your machine
+- No network — no backend, no telemetry, no cloud sync
+- Searchable, filterable sidebar with favorites pinning
+- System tray + global hotkey (`Ctrl+Shift+K`) — summon the vault from anywhere
+- Auto-lock after 15 minutes of inactivity
+- Close to tray — app lives in the system tray, not in the taskbar
+
+## Tech Stack
+
+- **Frontend:** React 19, TypeScript, Tailwind CSS v4
+- **Desktop:** Tauri v2 (Rust), SQLite via rusqlite, Argon2id + ChaCha20-Poly1305
 
 ## Development
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) 20+
+- [pnpm](https://pnpm.io/)
+- [Rust](https://rustup.rs/)
+- [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS
+
+### Run locally
 
 ```bash
 pnpm install
 pnpm tauri dev
 ```
 
-Requires: [Rust + Cargo](https://rustup.rs), [Node.js 20+](https://nodejs.org), [pnpm](https://pnpm.io), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
+### Build
+
+```bash
+pnpm tauri build
+```
 
 ## License
 
-Copyright © 2026 Daniel Wahlgren.
-Licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).
-
-You may use, copy, modify, and redistribute this software for **non-commercial purposes** only.
-Commercial use requires a separate written agreement.
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and non-commercial use. Commercial use requires permission from the author. See the full license for details.
