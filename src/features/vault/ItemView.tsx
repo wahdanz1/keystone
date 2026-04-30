@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { LuCopy, LuStar, LuEye, LuEyeOff, LuTag, LuPencil, LuTrash2 } from "react-icons/lu";
 import {
   Button,
@@ -126,15 +126,21 @@ export function ItemView({ item, onCopy, onToggleFavorite, onEdit, onDelete }: I
 
 function ValueCard({ item, onCopy }: { item: Item; onCopy: (item: Item) => void }) {
   const [revealed, setRevealed] = useState(item.kind !== "api_key");
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "shown" | "fading">("idle");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const isMasked = item.kind === "api_key" && !revealed;
   const display = isMasked ? "•".repeat(Math.min(item.value.length, 32)) : item.value;
   const isMultiline = item.value.includes("\n") || item.kind === "snippet" || item.kind === "command";
 
   function handleCopy() {
     onCopy(item);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopyState("shown");
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setCopyState("fading");
+      timerRef.current = setTimeout(() => setCopyState("idle"), 300);
+    }, 1500);
   }
 
   return (
@@ -164,8 +170,12 @@ function ValueCard({ item, onCopy }: { item: Item; onCopy: (item: Item) => void 
           </div>
         </CardContent>
       </Card>
-      {copied && (
-        <p className="mt-1.5 text-right text-xs text-success">
+      {copyState !== "idle" && (
+        <p
+          className={`mt-1.5 text-right text-xs text-success transition-opacity duration-300 ${
+            copyState === "fading" ? "opacity-0" : "opacity-100"
+          }`}
+        >
           Copied to clipboard
         </p>
       )}
