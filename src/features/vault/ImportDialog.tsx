@@ -47,9 +47,15 @@ export function ImportDialog({ path, onClose, onImported }: ImportDialogProps) {
       onClose();
     } catch (err) {
       const msg = typeof err === "string" ? err : String(err);
-      const isWrongPassword =
-        msg.includes("incorrect master password") || msg.includes("crypto error");
-      setError(isWrongPassword ? "Wrong passphrase or corrupt file." : msg);
+      const isWrongPassword = msg.includes("incorrect master password") || msg.includes("crypto error");
+      const isVersionMismatch = msg.includes("unsupported version");
+      setError(
+        isVersionMismatch
+          ? "This backup was made with a newer version of Keystone and cannot be imported."
+          : isWrongPassword
+            ? "Wrong passphrase or corrupt file."
+            : msg,
+      );
     } finally {
       setIsPending(false);
     }

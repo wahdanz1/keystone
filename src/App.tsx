@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openFile } from "@tauri-apps/plugin-dialog";
 import { UnlockScreen } from "@/features/lock/UnlockScreen";
 import { useAutoLock } from "@/features/lock/useAutoLock";
-import { Sidebar } from "@/features/vault/Sidebar";
+import { Sidebar, matches } from "@/features/vault/Sidebar";
 import { ItemView } from "@/features/vault/ItemView";
 import { ItemFormDialog, type ItemFormData } from "@/features/vault/ItemFormDialog";
 import { ExportDialog } from "@/features/vault/ExportDialog";
@@ -65,6 +65,10 @@ export default function App() {
     clearStateRef.current();
   }
 
+  function handleQuit() {
+    invoke("app_quit").catch(() => {});
+  }
+
   async function handleCopy(item: Item) {
     await navigator.clipboard.writeText(item.value);
     await invoke("item_mark_used", { id: item.id }).catch(() => {});
@@ -78,6 +82,9 @@ export default function App() {
     setCopiedId(item.id);
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
     copiedTimerRef.current = setTimeout(() => setCopiedId(null), 1500);
+    setTimeout(() => {
+      navigator.clipboard.writeText("").catch(() => {});
+    }, 30_000);
   }
 
   async function handleToggleFavorite(item: Item) {
@@ -88,7 +95,6 @@ export default function App() {
 
   async function handleSave(data: ItemFormData) {
     if (formDialog.item) {
-      // Edit
       await invoke("item_update", {
         id: formDialog.item.id,
         title: data.title,
@@ -97,15 +103,7 @@ export default function App() {
         notes: data.notes || null,
         tags: data.tags,
       });
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === formDialog.item!.id
-            ? { ...it, title: data.title, kind: data.kind, value: data.value, notes: data.notes || null, tags: data.tags }
-            : it,
-        ),
-      );
     } else {
-      // Create
       const id = await invoke<string>("item_create", {
         title: data.title,
         kind: data.kind,
@@ -113,22 +111,10 @@ export default function App() {
         notes: data.notes || null,
         tags: data.tags,
       });
-      const newItem: Item = {
-        id,
-        title: data.title,
-        kind: data.kind,
-        value: data.value,
-        notes: data.notes || null,
-        tags: data.tags,
-        isFavorite: false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        lastUsedAt: null,
-        copyCount: 0,
-      };
-      setItems((prev) => [...prev, newItem]);
       setSelectedId(id);
     }
+    const list = await invoke<Item[]>("items_list");
+    setItems(list);
   }
 
   async function handleImported() {
@@ -158,22 +144,24 @@ export default function App() {
 
   useEffect(() => {
     if (status !== "unlocked") return;
+    const activeItems = query.trim() ? items.filter((it) => matches(it, query)) : items;
     function handleKey(e: KeyboardEvent) {
+      if (formDialog.open || exportOpen || importPath !== null) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
         return;
       }
       if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
-        if (items.length === 0) return;
-        const idx = items.findIndex((it) => it.id === selectedId);
+        if (activeItems.length === 0) return;
+        const idx = activeItems.findIndex((it) => it.id === selectedId);
         const nextIdx =
           idx === -1
             ? 0
             : e.shiftKey
-              ? (idx === 0 ? items.length - 1 : idx - 1)
-              : (idx === items.length - 1 ? 0 : idx + 1);
-        setSelectedId(items[nextIdx].id);
+              ? (idx === 0 ? activeItems.length - 1 : idx - 1)
+              : (idx === activeItems.length - 1 ? 0 : idx + 1);
+        setSelectedId(activeItems[nextIdx].id);
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "c") {
         e.preventDefault();
         const sel = items.find((it) => it.id === selectedId);
@@ -182,7 +170,7 @@ export default function App() {
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [items, selectedId, status]);
+  }, [items, selectedId, status, query, formDialog.open, exportOpen, importPath]);
 
   if (status === null) {
     return (
@@ -218,6 +206,7 @@ export default function App() {
           onLock={handleLock}
           onExport={() => setExportOpen(true)}
           onImport={handleImportClick}
+          onQuit={handleQuit}
         />
         <main className="flex flex-1 flex-col overflow-hidden">
           <ItemView

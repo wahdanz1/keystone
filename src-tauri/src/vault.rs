@@ -235,6 +235,9 @@ impl VaultState {
     }
 
     pub fn export_vault(&self, path: &str, passphrase: &str) -> Result<usize> {
+        if passphrase.len() < 8 {
+            return Err(VaultError::PasswordTooShort);
+        }
         let items = self.list_items()?;
         let export_items: Vec<ExportItem> = items
             .into_iter()

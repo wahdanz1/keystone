@@ -36,6 +36,7 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!passphrase) { setError("Passphrase is required."); return; }
+    if (passphrase.length < 8) { setError("Passphrase must be at least 8 characters."); return; }
     if (passphrase !== confirm) { setError("Passphrases do not match."); return; }
 
     const path = await save({

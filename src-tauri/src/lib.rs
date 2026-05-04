@@ -104,6 +104,12 @@ fn vault_import(state: VaultStateRef<'_>, path: String, passphrase: String) -> R
     state.import_vault(&path, &passphrase)
 }
 
+#[tauri::command]
+fn app_quit(app: tauri::AppHandle, state: VaultStateRef<'_>) {
+    state.lock().ok();
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -147,7 +153,11 @@ pub fn run() {
                         vault.lock().ok();
                         app.emit("vault:locked", ()).ok();
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        let vault = app.state::<Arc<VaultState>>();
+                        vault.lock().ok();
+                        app.exit(0);
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -183,6 +193,7 @@ pub fn run() {
             item_mark_used,
             vault_export,
             vault_import,
+            app_quit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

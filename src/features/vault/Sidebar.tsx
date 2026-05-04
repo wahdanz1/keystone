@@ -1,4 +1,4 @@
-import { LuSearch, LuStar, LuPlus, LuLock, LuArchive, LuArchiveRestore, LuEllipsisVertical, LuCopy, LuCheck, LuX } from "react-icons/lu";
+import { LuSearch, LuStar, LuPlus, LuLock, LuArchive, LuArchiveRestore, LuEllipsisVertical, LuCopy, LuCheck, LuX, LuPowerOff } from "react-icons/lu";
 import {
   Input,
   IconButton,
@@ -28,9 +28,10 @@ interface SidebarProps {
   onLock: () => void;
   onExport: () => void;
   onImport: () => void;
+  onQuit: () => void;
 }
 
-export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onSelect, onCopy, onCreate, onLock, onExport, onImport }: SidebarProps) {
+export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onSelect, onCopy, onCreate, onLock, onExport, onImport, onQuit }: SidebarProps) {
   const isSearching = query.trim().length > 0;
   const favorites = items.filter((it) => it.isFavorite);
   const rest = items.filter((it) => !it.isFavorite);
@@ -51,6 +52,7 @@ export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onS
               <IconButton
                 size="sm"
                 aria-label="Clear filter"
+                tabIndex={-1}
                 onClick={() => onQueryChange("")}
                 className="-mr-1.5"
               >
@@ -149,6 +151,10 @@ export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onS
             <DropdownMenuItem onSelect={onExport}>
               <LuArchive /> Export backup
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onQuit}>
+              <LuPowerOff /> Quit Keystone
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -214,7 +220,7 @@ function EmptyHint({ message }: { message: string }) {
   );
 }
 
-function matches(item: Item, query: string): boolean {
+export function matches(item: Item, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (item.title.toLowerCase().includes(q)) return true;
   if (item.value.toLowerCase().includes(q)) return true;

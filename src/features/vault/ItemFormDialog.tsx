@@ -57,7 +57,7 @@ export function ItemFormDialog({ open, item, onClose, onSave }: ItemFormDialogPr
     setError(null);
     setIsPending(true);
     try {
-      const tags = tagsRaw.split(",").map((t) => t.trim()).filter(Boolean);
+      const tags = [...new Set(tagsRaw.split(",").map((t) => t.trim()).filter(Boolean))];
       await onSave({ title: title.trim(), kind, value: value.trim(), notes: notes.trim(), tags });
       onClose();
     } catch (err) {
