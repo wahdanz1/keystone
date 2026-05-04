@@ -11,35 +11,35 @@
 }
 
 /* Theme tokens — single source of truth.
-   Hue 70 = amber. Change the L/C/H below and it propagates everywhere. */
+   Hue 83 = gold (#da9e00, the brand color). Change the L/C/H below and it propagates everywhere. */
 @layer base {
   :root {
     --background: oklch(0.99 0 0);
-    --foreground: oklch(0.18 0.005 70);
+    --foreground: oklch(0.18 0.005 83);
 
     --muted: oklch(0.96 0 0);
     --muted-foreground: oklch(0.5 0 0);
 
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.18 0.005 70);
+    --card-foreground: oklch(0.18 0.005 83);
 
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.18 0.005 70);
+    --popover-foreground: oklch(0.18 0.005 83);
 
     --border: oklch(0.92 0 0);
     --input: oklch(0.92 0 0);
-    --ring: oklch(0.7 0.16 70);
+    --ring: oklch(0.7 0.16 83);
 
-    --primary: oklch(0.7 0.16 70);
-    --primary-hover: oklch(0.78 0.17 70);
-    --primary-foreground: oklch(0.18 0.005 70);
+    --primary: oklch(0.7 0.16 83);
+    --primary-hover: oklch(0.78 0.17 83);
+    --primary-foreground: oklch(0.18 0.005 83);
 
     --secondary: oklch(0.96 0 0);
     --secondary-hover: oklch(0.93 0 0);
-    --secondary-foreground: oklch(0.25 0.005 70);
+    --secondary-foreground: oklch(0.25 0.005 83);
 
-    --accent: oklch(0.94 0.02 70);
-    --accent-foreground: oklch(0.25 0.005 70);
+    --accent: oklch(0.94 0 0);
+    --accent-foreground: oklch(0.25 0 0);
 
     --destructive: oklch(0.6 0.2 25);
     --destructive-hover: oklch(0.68 0.21 25);
@@ -49,35 +49,35 @@
     --success-foreground: oklch(0.99 0 0);
 
     --warning: oklch(0.75 0.15 75);
-    --warning-foreground: oklch(0.18 0.005 70);
+    --warning-foreground: oklch(0.18 0.005 83);
   }
 
   .dark {
-    --background: oklch(0.16 0.005 70);
+    --background: oklch(0.16 0.005 83);
     --foreground: oklch(0.96 0 0);
 
-    --muted: oklch(0.22 0.005 70);
-    --muted-foreground: oklch(0.65 0.005 70);
+    --muted: oklch(0.22 0.005 83);
+    --muted-foreground: oklch(0.65 0.005 83);
 
-    --card: oklch(0.19 0.005 70);
+    --card: oklch(0.19 0.005 83);
     --card-foreground: oklch(0.96 0 0);
 
-    --popover: oklch(0.19 0.005 70);
+    --popover: oklch(0.19 0.005 83);
     --popover-foreground: oklch(0.96 0 0);
 
-    --border: oklch(0.27 0.005 70);
-    --input: oklch(0.27 0.005 70);
-    --ring: oklch(0.78 0.16 70);
+    --border: oklch(0.27 0.005 83);
+    --input: oklch(0.27 0.005 83);
+    --ring: oklch(0.78 0.16 83);
 
-    --primary: oklch(0.78 0.16 70);
-    --primary-hover: oklch(0.86 0.17 70);
-    --primary-foreground: oklch(0.16 0.005 70);
+    --primary: oklch(0.78 0.16 83);
+    --primary-hover: oklch(0.86 0.17 83);
+    --primary-foreground: oklch(0.16 0.005 83);
 
-    --secondary: oklch(0.24 0.005 70);
-    --secondary-hover: oklch(0.3 0.005 70);
+    --secondary: oklch(0.24 0.005 83);
+    --secondary-hover: oklch(0.3 0.005 83);
     --secondary-foreground: oklch(0.96 0 0);
 
-    --accent: oklch(0.3 0.04 70);
+    --accent: oklch(0.27 0 0);
     --accent-foreground: oklch(0.96 0 0);
 
     --destructive: oklch(0.65 0.2 25);
@@ -85,10 +85,10 @@
     --destructive-foreground: oklch(0.99 0 0);
 
     --success: oklch(0.7 0.16 150);
-    --success-foreground: oklch(0.16 0.005 70);
+    --success-foreground: oklch(0.16 0.005 83);
 
     --warning: oklch(0.78 0.15 75);
-    --warning-foreground: oklch(0.16 0.005 70);
+    --warning-foreground: oklch(0.16 0.005 83);
   }
 }
 

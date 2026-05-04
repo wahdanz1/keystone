@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { LuCopy, LuStar, LuEye, LuEyeOff, LuTag, LuPencil, LuTrash2 } from "react-icons/lu";
+import { useState } from "react";
+import { LuCopy, LuCheck, LuStar, LuEye, LuEyeOff, LuTag, LuPencil, LuTrash2 } from "react-icons/lu";
 import {
   Button,
   IconButton,
@@ -13,17 +13,21 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui";
+import { cn } from "@/lib/utils";
+import { typeIcon, typeLabel } from "./itemType";
 import type { Item } from "@/types";
 
 interface ItemViewProps {
   item: Item | null;
+  isCopied: boolean;
   onCopy: (item: Item) => void;
   onToggleFavorite: (item: Item) => void;
   onEdit: (item: Item) => void;
   onDelete: (item: Item) => void;
+  onTagClick: (tag: string) => void;
 }
 
-export function ItemView({ item, onCopy, onToggleFavorite, onEdit, onDelete }: ItemViewProps) {
+export function ItemView({ item, isCopied, onCopy, onToggleFavorite, onEdit, onDelete, onTagClick }: ItemViewProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!item) {
@@ -38,11 +42,15 @@ export function ItemView({ item, onCopy, onToggleFavorite, onEdit, onDelete }: I
     <>
       <div className="flex flex-1 flex-col overflow-y-auto p-8">
         <header className="mb-6 flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex shrink-0 items-center text-muted-foreground [&_svg]:size-6"
+              title={typeLabel(item.kind)}
+              aria-label={typeLabel(item.kind)}
+            >
+              {typeIcon(item.kind)}
+            </span>
             <h1 className="text-2xl font-semibold tracking-tight">{item.title}</h1>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {kindLabel(item.kind)}
-            </p>
           </div>
           <div className="flex items-center gap-1">
             <IconButton
@@ -68,21 +76,7 @@ export function ItemView({ item, onCopy, onToggleFavorite, onEdit, onDelete }: I
           </div>
         </header>
 
-        <ValueCard key={item.id} item={item} onCopy={onCopy} />
-
-        {item.tags.length > 0 && (
-          <div className="mt-5 flex flex-wrap items-center gap-2">
-            <LuTag className="text-muted-foreground" />
-            {item.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-secondary px-2.5 py-1 text-xs text-secondary-foreground"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
+        <ValueCard key={item.id} item={item} isCopied={isCopied} onCopy={onCopy} />
 
         {item.notes && (
           <Card className="mt-5">
@@ -93,6 +87,21 @@ export function ItemView({ item, onCopy, onToggleFavorite, onEdit, onDelete }: I
               {item.notes}
             </CardContent>
           </Card>
+        )}
+
+        {item.tags.length > 0 && (
+          <div className="mt-auto flex flex-wrap items-center gap-2 pt-6">
+            <LuTag className="text-muted-foreground" />
+            {item.tags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => onTagClick(tag)}
+                className="rounded-full bg-secondary px-2.5 py-1 text-xs text-secondary-foreground transition-opacity hover:opacity-70"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
@@ -124,70 +133,49 @@ export function ItemView({ item, onCopy, onToggleFavorite, onEdit, onDelete }: I
   );
 }
 
-function ValueCard({ item, onCopy }: { item: Item; onCopy: (item: Item) => void }) {
+function ValueCard({ item, isCopied, onCopy }: { item: Item; isCopied: boolean; onCopy: (item: Item) => void }) {
   const [revealed, setRevealed] = useState(item.kind !== "api_key");
-  const [copyState, setCopyState] = useState<"idle" | "shown" | "fading">("idle");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isMasked = item.kind === "api_key" && !revealed;
   const display = isMasked ? "•".repeat(Math.min(item.value.length, 32)) : item.value;
   const isMultiline = item.value.includes("\n") || item.kind === "snippet" || item.kind === "command";
-
-  function handleCopy() {
-    onCopy(item);
-    setCopyState("shown");
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      setCopyState("fading");
-      timerRef.current = setTimeout(() => setCopyState("idle"), 300);
-    }, 1500);
-  }
+  const hasReveal = item.kind === "api_key";
 
   return (
-    <>
-      <Card>
-        <CardContent className="flex items-stretch gap-2 p-3">
+    <Card>
+      <CardContent className="flex items-start gap-2 p-3">
+        <div className="relative flex-1">
           <pre
-            className={
-              "selectable flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2.5 font-mono text-sm text-foreground" +
-              (isMultiline ? " whitespace-pre" : " whitespace-pre-wrap break-all")
-            }
+            className={cn(
+              "selectable overflow-x-auto rounded-md bg-muted px-3 py-2.5 font-mono text-sm text-foreground",
+              isMultiline ? "whitespace-pre" : "whitespace-pre-wrap break-all",
+              hasReveal && "pr-11",
+            )}
           >
             {display}
           </pre>
-          <div className="flex flex-col gap-1">
-            {item.kind === "api_key" && (
-              <IconButton
-                aria-label={revealed ? "Hide value" : "Reveal value"}
-                onClick={() => setRevealed((v) => !v)}
-              >
-                {revealed ? <LuEyeOff /> : <LuEye />}
-              </IconButton>
-            )}
-            <Button onClick={handleCopy} size="sm" variant="secondary">
-              <LuCopy /> Copy
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      {copyState !== "idle" && (
-        <p
-          className={`mt-1.5 text-right text-xs text-success transition-opacity duration-300 ${
-            copyState === "fading" ? "opacity-0" : "opacity-100"
-          }`}
+          {hasReveal && (
+            <button
+              type="button"
+              aria-label={revealed ? "Hide value" : "Reveal value"}
+              onClick={() => setRevealed((v) => !v)}
+              className="absolute right-1.5 top-1.5 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring outline-none [&_svg]:size-4"
+            >
+              {revealed ? <LuEyeOff /> : <LuEye />}
+            </button>
+          )}
+        </div>
+        <Button
+          onClick={() => onCopy(item)}
+          variant="secondary"
+          className={cn(
+            "min-w-[6rem] transition-colors",
+            isCopied && "text-success hover:text-success",
+          )}
         >
-          Copied to clipboard
-        </p>
-      )}
-    </>
+          {isCopied ? <><LuCheck /> Copied</> : <><LuCopy /> Copy</>}
+        </Button>
+      </CardContent>
+    </Card>
   );
-}
-
-function kindLabel(kind: Item["kind"]): string {
-  switch (kind) {
-    case "api_key": return "API key";
-    case "snippet": return "Snippet";
-    case "command": return "Command";
-    case "note": return "Note";
-  }
 }

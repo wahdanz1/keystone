@@ -23,6 +23,10 @@ pub enum VaultError {
     Crypto(String),
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
+    #[error("export file is corrupt or not a valid Keystone export")]
+    CorruptData,
+    #[error("export file version is not supported")]
+    UnsupportedVersion,
 }
 
 impl Serialize for VaultError {

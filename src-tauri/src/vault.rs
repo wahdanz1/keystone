@@ -3,17 +3,41 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+
 use crate::crypto::{
-    check_verifier, derive_key, make_verifier, random_bytes, KdfParams, DEFAULT_KDF_PARAMS,
-    KEY_LEN, SALT_LEN,
+    check_verifier, derive_key, make_verifier, open as aead_open, random_bytes, seal,
+    KdfParams, DEFAULT_KDF_PARAMS, KEY_LEN, SALT_LEN,
 };
 use crate::db::{self, Item};
 use crate::error::{Result, VaultError};
 
 const DB_FILENAME: &str = "vault.db";
+
+#[derive(Serialize, Deserialize)]
+struct ExportFile {
+    version: u32,
+    kdf: KdfParams,
+    salt: String,
+    ciphertext: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExportPayload {
+    items: Vec<ExportItem>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExportItem {
+    title: String,
+    kind: String,
+    value: String,
+    notes: Option<String>,
+    tags: Vec<String>,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -132,7 +156,7 @@ impl VaultState {
         if !self.db_path().exists() {
             return Err(VaultError::NotInitialized);
         }
-        let conn = Connection::open(self.db_path())?;
+        let mut conn = Connection::open(self.db_path())?;
 
         let salt = db::get_meta(&conn, db::META_SALT)?.ok_or(VaultError::NotInitialized)?;
         let verifier = db::get_meta(&conn, db::META_VERIFIER)?.ok_or(VaultError::NotInitialized)?;
@@ -144,6 +168,13 @@ impl VaultState {
         let key = derive_key(password, &salt, &kdf)?;
         if !check_verifier(&key, &verifier) {
             return Err(VaultError::BadPassword);
+        }
+
+        let version = db::get_meta(&conn, db::META_SCHEMA_VERSION)?
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
+        if version == "1" {
+            db::migrate_v1_to_v2(&mut conn, &key)?;
         }
 
         let mut init_cache = self.initialized.lock().map_err(|_| VaultError::Locked)?;
@@ -201,5 +232,61 @@ impl VaultState {
 
     pub fn mark_used(&self, id: &str) -> Result<()> {
         self.with_conn(|conn, _key| db::mark_used(conn, id))
+    }
+
+    pub fn export_vault(&self, path: &str, passphrase: &str) -> Result<usize> {
+        let items = self.list_items()?;
+        let export_items: Vec<ExportItem> = items
+            .into_iter()
+            .map(|it| ExportItem {
+                title: it.title,
+                kind: it.kind,
+                value: it.value,
+                notes: it.notes,
+                tags: it.tags,
+            })
+            .collect();
+        let count = export_items.len();
+        let payload_json = serde_json::to_vec(&ExportPayload { items: export_items })?;
+        let salt: [u8; SALT_LEN] = random_bytes();
+        let export_key = derive_key(passphrase, &salt, &DEFAULT_KDF_PARAMS)?;
+        let ciphertext = seal(&export_key, &payload_json)?;
+        let export_file = ExportFile {
+            version: 1,
+            kdf: DEFAULT_KDF_PARAMS,
+            salt: BASE64.encode(salt),
+            ciphertext: BASE64.encode(&ciphertext),
+        };
+        fs::write(path, serde_json::to_string_pretty(&export_file)?)?;
+        Ok(count)
+    }
+
+    pub fn import_vault(&self, path: &str, passphrase: &str) -> Result<usize> {
+        let data = fs::read_to_string(path)?;
+        let export_file: ExportFile =
+            serde_json::from_str(&data).map_err(|_| VaultError::CorruptData)?;
+        if export_file.version != 1 {
+            return Err(VaultError::UnsupportedVersion);
+        }
+        let salt_bytes = BASE64.decode(&export_file.salt).map_err(|_| VaultError::CorruptData)?;
+        let ct_bytes =
+            BASE64.decode(&export_file.ciphertext).map_err(|_| VaultError::CorruptData)?;
+        let export_key = derive_key(passphrase, &salt_bytes, &export_file.kdf)?;
+        let plaintext =
+            aead_open(&export_key, &ct_bytes).map_err(|_| VaultError::BadPassword)?;
+        let payload: ExportPayload =
+            serde_json::from_slice(&plaintext).map_err(|_| VaultError::CorruptData)?;
+        let count = payload.items.len();
+        self.with_conn_mut(|conn, key| {
+            for item in &payload.items {
+                let id = uuid::Uuid::new_v4().to_string();
+                db::insert_item(
+                    conn, key, &id, &item.title, &item.kind, &item.value,
+                    item.notes.as_deref(), &item.tags,
+                )?;
+            }
+            Ok(())
+        })?;
+        Ok(count)
     }
 }

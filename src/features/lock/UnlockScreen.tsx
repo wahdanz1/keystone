@@ -1,6 +1,30 @@
 import { useState, type FormEvent } from "react";
 import { LuEye, LuEyeOff } from "react-icons/lu";
 import { Button, Input, IconButton } from "@/components/ui";
+import { cn } from "@/lib/utils";
+
+interface PasswordStrength {
+  level: 1 | 2 | 3 | 4;
+  label: string;
+  barClass: string;
+}
+
+function passwordStrength(password: string): PasswordStrength | null {
+  if (password.length === 0) return null;
+
+  let charset = 0;
+  if (/[a-z]/.test(password)) charset += 26;
+  if (/[A-Z]/.test(password)) charset += 26;
+  if (/\d/.test(password)) charset += 10;
+  if (/[^a-zA-Z0-9]/.test(password)) charset += 32;
+
+  const bits = password.length * Math.log2(Math.max(charset, 1));
+
+  if (bits < 40) return { level: 1, label: "Weak", barClass: "bg-destructive" };
+  if (bits < 60) return { level: 2, label: "Fair", barClass: "bg-warning" };
+  if (bits < 80) return { level: 3, label: "Good", barClass: "bg-warning" };
+  return { level: 4, label: "Strong", barClass: "bg-success" };
+}
 
 function toMessage(err: unknown): string {
   if (typeof err === "string") return capitalize(err);
@@ -25,6 +49,7 @@ export function UnlockScreen({ mode, onSubmit }: UnlockScreenProps) {
   const [isPending, setIsPending] = useState(false);
 
   const isCreate = mode === "create";
+  const strength = isCreate ? passwordStrength(password) : null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -52,9 +77,12 @@ export function UnlockScreen({ mode, onSubmit }: UnlockScreenProps) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4">
-        <h1 className="text-center text-xl font-semibold tracking-tight">
-          {isCreate ? "Create your vault" : "Unlock Keystone"}
-        </h1>
+        <div className="flex flex-col items-center gap-3">
+          <img src="/keystone-logo.svg" alt="" className="h-16 w-16" />
+          <h1 className="text-xl font-semibold tracking-tight">
+            {isCreate ? "Create vault" : "Unlock vault"}
+          </h1>
+        </div>
 
         <Input
           type={showPassword ? "text" : "password"}
@@ -77,6 +105,23 @@ export function UnlockScreen({ mode, onSubmit }: UnlockScreenProps) {
             </IconButton>
           }
         />
+
+        {strength && (
+          <div className="-mt-2 flex flex-col gap-1.5">
+            <div className="flex gap-1">
+              {[1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "h-1 flex-1 rounded-full transition-colors",
+                    i <= strength.level ? strength.barClass : "bg-muted",
+                  )}
+                />
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{strength.label}</p>
+          </div>
+        )}
 
         {isCreate && (
           <Input

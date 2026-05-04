@@ -1,18 +1,35 @@
-import { LuSearch, LuStar, LuPlus, LuLock } from "react-icons/lu";
-import { Input, IconButton, List, ListItem, ListSection, ListSectionLabel } from "@/components/ui";
+import { LuSearch, LuStar, LuPlus, LuLock, LuArchive, LuArchiveRestore, LuEllipsisVertical, LuCopy, LuCheck } from "react-icons/lu";
+import {
+  Input,
+  IconButton,
+  List,
+  ListSection,
+  ListSectionLabel,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui";
+import { cn } from "@/lib/utils";
+import { typeIcon } from "./itemType";
 import type { Item } from "@/types";
 
 interface SidebarProps {
   items: Item[];
   query: string;
   selectedId: string | null;
+  copiedId: string | null;
   onQueryChange: (q: string) => void;
   onSelect: (id: string) => void;
+  onCopy: (item: Item) => void;
   onCreate: () => void;
   onLock: () => void;
+  onExport: () => void;
+  onImport: () => void;
 }
 
-export function Sidebar({ items, query, selectedId, onQueryChange, onSelect, onCreate, onLock }: SidebarProps) {
+export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onSelect, onCopy, onCreate, onLock, onExport, onImport }: SidebarProps) {
   const isSearching = query.trim().length > 0;
   const sorted = [...items].sort((a, b) => a.title.localeCompare(b.title));
   const favorites = sorted.filter((it) => it.isFavorite);
@@ -43,14 +60,15 @@ export function Sidebar({ items, query, selectedId, onQueryChange, onSelect, onC
           ) : (
             <List>
               {filtered.map((it) => (
-                <ListItem
+                <SidebarItem
                   key={it.id}
+                  item={it}
                   selected={it.id === selectedId}
-                  onClick={() => onSelect(it.id)}
-                  leadingIcon={it.isFavorite ? <LuStar /> : null}
-                >
-                  {it.title}
-                </ListItem>
+                  isCopied={it.id === copiedId}
+                  onSelect={() => onSelect(it.id)}
+                  onCopy={() => onCopy(it)}
+                  showFavoriteIndicator
+                />
               ))}
             </List>
           )
@@ -63,14 +81,14 @@ export function Sidebar({ items, query, selectedId, onQueryChange, onSelect, onC
                 <ListSectionLabel>Favorites</ListSectionLabel>
                 <List>
                   {favorites.map((it) => (
-                    <ListItem
+                    <SidebarItem
                       key={it.id}
+                      item={it}
                       selected={it.id === selectedId}
-                      onClick={() => onSelect(it.id)}
-                      leadingIcon={<LuStar />}
-                    >
-                      {it.title}
-                    </ListItem>
+                      isCopied={it.id === copiedId}
+                      onSelect={() => onSelect(it.id)}
+                      onCopy={() => onCopy(it)}
+                    />
                   ))}
                 </List>
               </ListSection>
@@ -79,13 +97,14 @@ export function Sidebar({ items, query, selectedId, onQueryChange, onSelect, onC
               {favorites.length > 0 && <ListSectionLabel>All</ListSectionLabel>}
               <List>
                 {rest.map((it) => (
-                  <ListItem
+                  <SidebarItem
                     key={it.id}
+                    item={it}
                     selected={it.id === selectedId}
-                    onClick={() => onSelect(it.id)}
-                  >
-                    {it.title}
-                  </ListItem>
+                    isCopied={it.id === copiedId}
+                    onSelect={() => onSelect(it.id)}
+                    onCopy={() => onCopy(it)}
+                  />
                 ))}
               </List>
             </ListSection>
@@ -93,15 +112,103 @@ export function Sidebar({ items, query, selectedId, onQueryChange, onSelect, onC
         )}
       </div>
 
+      <div className="px-3 pb-1.5 pt-1 text-[10px] text-muted-foreground/60">
+        <kbd className="font-sans">Ctrl+Tab</kbd> to navigate
+      </div>
       <div className="flex items-center justify-between border-t border-border p-2">
         <span className="px-2 text-xs text-muted-foreground">
           {items.length} {items.length === 1 ? "item" : "items"}
         </span>
-        <IconButton aria-label="Lock vault" onClick={onLock}>
-          <LuLock />
-        </IconButton>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <IconButton aria-label="Vault actions">
+              <LuEllipsisVertical />
+            </IconButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={onLock}>
+              <LuLock /> Lock vault
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onImport}>
+              <LuArchiveRestore /> Import backup
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onExport}>
+              <LuArchive /> Export backup
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </aside>
+  );
+}
+
+function SidebarItem({
+  item,
+  selected,
+  isCopied,
+  onSelect,
+  onCopy,
+  showFavoriteIndicator = false,
+}: {
+  item: Item;
+  selected: boolean;
+  isCopied: boolean;
+  onSelect: () => void;
+  onCopy: () => void;
+  showFavoriteIndicator?: boolean;
+}) {
+  function handleCopyClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    onCopy();
+  }
+
+  return (
+    <li className="contents">
+      <div className="group relative">
+        <button
+          type="button"
+          data-selected={selected ? "true" : undefined}
+          onClick={onSelect}
+          className={cn(
+            "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 pr-9 text-left text-sm outline-none transition-colors",
+            "text-foreground hover:bg-accent hover:text-accent-foreground",
+            "focus-visible:ring-2 focus-visible:ring-ring",
+            "data-[selected=true]:bg-accent data-[selected=true]:text-foreground",
+          )}
+        >
+          <span
+            className={cn(
+              "flex shrink-0 items-center [&_svg]:size-4",
+              selected
+                ? "text-primary"
+                : "text-muted-foreground group-hover:text-accent-foreground",
+            )}
+          >
+            {typeIcon(item.kind)}
+          </span>
+          <span className="flex-1 truncate">{item.title}</span>
+        </button>
+
+        {showFavoriteIndicator && item.isFavorite && !isCopied && (
+          <LuStar className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 fill-primary text-primary group-hover:hidden" />
+        )}
+
+        <button
+          type="button"
+          aria-label={`Copy value of ${item.title}`}
+          onClick={handleCopyClick}
+          className={cn(
+            "absolute right-1.5 top-1/2 size-7 -translate-y-1/2 items-center justify-center rounded-md transition-colors [&_svg]:size-3.5",
+            isCopied
+              ? "inline-flex text-success hover:text-success"
+              : "hidden text-muted-foreground hover:text-foreground group-hover:inline-flex",
+          )}
+        >
+          {isCopied ? <LuCheck /> : <LuCopy />}
+        </button>
+      </div>
+    </li>
   );
 }
 

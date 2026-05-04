@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +24,14 @@ pub struct Item {
 
 #[derive(Serialize, Deserialize)]
 struct EncryptedPayload {
+    title: String,
+    value: String,
+    notes: Option<String>,
+    tags: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct LegacyEncryptedPayload {
     value: String,
     notes: Option<String>,
 }
@@ -29,7 +39,7 @@ struct EncryptedPayload {
 pub(crate) const META_SALT: &str = "salt";
 pub(crate) const META_VERIFIER: &str = "verifier";
 pub(crate) const META_KDF_PARAMS: &str = "kdf_params";
-const META_SCHEMA_VERSION: &str = "schema_version";
+pub(crate) const META_SCHEMA_VERSION: &str = "schema_version";
 
 pub fn init_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(
@@ -41,7 +51,6 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
 
         CREATE TABLE IF NOT EXISTS items (
             id           TEXT PRIMARY KEY,
-            title        TEXT NOT NULL,
             kind         TEXT NOT NULL CHECK (kind IN ('api_key','snippet','command','note')),
             payload      BLOB NOT NULL,
             is_favorite  INTEGER NOT NULL DEFAULT 0,
@@ -51,18 +60,10 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             copy_count   INTEGER NOT NULL DEFAULT 0
         );
 
-        CREATE TABLE IF NOT EXISTS tags (
-            item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-            tag     TEXT NOT NULL,
-            PRIMARY KEY (item_id, tag)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_items_title ON items(title COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_items_favorite ON items(is_favorite);
-        CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag COLLATE NOCASE);
         "#,
     )?;
-    set_meta_text(conn, META_SCHEMA_VERSION, "1")?;
+    set_meta_text(conn, META_SCHEMA_VERSION, "2")?;
     Ok(())
 }
 
@@ -90,10 +91,10 @@ fn set_meta_text(conn: &Connection, key: &str, value: &str) -> Result<()> {
 
 pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, kind, payload, is_favorite, created_at, updated_at, last_used_at, copy_count
-         FROM items ORDER BY title COLLATE NOCASE",
+        "SELECT id, kind, payload, is_favorite, created_at, updated_at, last_used_at, copy_count
+         FROM items",
     )?;
-    let rows: Vec<(String, String, String, Vec<u8>, i64, i64, i64, Option<i64>, i64)> = stmt
+    let rows: Vec<(String, String, Vec<u8>, i64, i64, i64, Option<i64>, i64)> = stmt
         .query_map([], |row| {
             Ok((
                 row.get(0)?,
@@ -104,26 +105,21 @@ pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
                 row.get(5)?,
                 row.get(6)?,
                 row.get(7)?,
-                row.get(8)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let mut tag_stmt = conn.prepare("SELECT tag FROM tags WHERE item_id = ?1 ORDER BY tag")?;
     let mut items = Vec::with_capacity(rows.len());
-    for (id, title, kind, payload, fav, created, updated, last_used, copies) in rows {
+    for (id, kind, payload, fav, created, updated, last_used, copies) in rows {
         let payload_bytes = aead_open(key, &payload)?;
-        let payload: EncryptedPayload = serde_json::from_slice(&payload_bytes)?;
-        let tags = tag_stmt
-            .query_map(params![id], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let p: EncryptedPayload = serde_json::from_slice(&payload_bytes)?;
         items.push(Item {
             id,
-            title,
-            value: payload.value,
+            title: p.title,
+            value: p.value,
             kind,
-            notes: payload.notes,
-            tags,
+            notes: p.notes,
+            tags: p.tags,
             is_favorite: fav != 0,
             created_at: created,
             updated_at: updated,
@@ -131,6 +127,7 @@ pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
             copy_count: copies,
         });
     }
+    items.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
     Ok(items)
 }
 
@@ -163,26 +160,19 @@ pub fn insert_item(
     tags: &[String],
 ) -> Result<()> {
     let payload = EncryptedPayload {
+        title: title.to_string(),
         value: value.to_string(),
         notes: notes.map(|s| s.to_string()),
+        tags: tags.to_vec(),
     };
     let payload_json = serde_json::to_vec(&payload)?;
     let sealed = seal(key, &payload_json)?;
     let now = unix_millis();
-
-    let tx = conn.transaction()?;
-    tx.execute(
-        "INSERT INTO items(id, title, kind, payload, is_favorite, created_at, updated_at, last_used_at, copy_count)
-         VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5, NULL, 0)",
-        params![id, title, kind, sealed, now],
+    conn.execute(
+        "INSERT INTO items(id, kind, payload, is_favorite, created_at, updated_at, last_used_at, copy_count)
+         VALUES (?1, ?2, ?3, 0, ?4, ?4, NULL, 0)",
+        params![id, kind, sealed, now],
     )?;
-    for tag in tags {
-        tx.execute(
-            "INSERT OR IGNORE INTO tags(item_id, tag) VALUES (?1, ?2)",
-            params![id, tag],
-        )?;
-    }
-    tx.commit()?;
     Ok(())
 }
 
@@ -197,31 +187,104 @@ pub fn update_item(
     tags: &[String],
 ) -> Result<()> {
     let payload = EncryptedPayload {
+        title: title.to_string(),
         value: value.to_string(),
         notes: notes.map(|s| s.to_string()),
+        tags: tags.to_vec(),
     };
     let payload_json = serde_json::to_vec(&payload)?;
     let sealed = seal(key, &payload_json)?;
     let now = unix_millis();
-
-    let tx = conn.transaction()?;
-    tx.execute(
-        "UPDATE items SET title = ?1, kind = ?2, payload = ?3, updated_at = ?4 WHERE id = ?5",
-        params![title, kind, sealed, now, id],
+    conn.execute(
+        "UPDATE items SET kind = ?1, payload = ?2, updated_at = ?3 WHERE id = ?4",
+        params![kind, sealed, now, id],
     )?;
-    tx.execute("DELETE FROM tags WHERE item_id = ?1", params![id])?;
-    for tag in tags {
-        tx.execute(
-            "INSERT OR IGNORE INTO tags(item_id, tag) VALUES (?1, ?2)",
-            params![id, tag],
-        )?;
-    }
-    tx.commit()?;
     Ok(())
 }
 
 pub fn delete_item(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("DELETE FROM items WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// Migrate from schema v1 (plaintext title column + tags table) to v2 (title and tags
+/// folded into the encrypted payload).
+pub fn migrate_v1_to_v2(conn: &mut Connection, key: &[u8; KEY_LEN]) -> Result<()> {
+    let old_items: Vec<(String, String, Vec<u8>)> = {
+        let mut stmt = conn.prepare("SELECT id, title, payload FROM items")?;
+        let rows: Vec<_> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows
+    };
+
+    let mut tags_by_item: HashMap<String, Vec<String>> = HashMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT item_id, tag FROM tags ORDER BY tag")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (item_id, tag) = row?;
+            tags_by_item.entry(item_id).or_default().push(tag);
+        }
+    }
+
+    let tx = conn.transaction()?;
+    for (id, title, payload) in &old_items {
+        let pt = aead_open(key, payload)?;
+        let old: LegacyEncryptedPayload = serde_json::from_slice(&pt)?;
+        let new = EncryptedPayload {
+            title: title.clone(),
+            value: old.value,
+            notes: old.notes,
+            tags: tags_by_item.get(id).cloned().unwrap_or_default(),
+        };
+        let new_pt = serde_json::to_vec(&new)?;
+        let new_sealed = seal(key, &new_pt)?;
+        tx.execute(
+            "UPDATE items SET payload = ?1 WHERE id = ?2",
+            params![new_sealed, id],
+        )?;
+    }
+
+    tx.execute_batch(
+        r#"
+        DROP INDEX IF EXISTS idx_items_title;
+        DROP INDEX IF EXISTS idx_tags_tag;
+        DROP TABLE IF EXISTS tags;
+
+        CREATE TABLE items_new (
+            id           TEXT PRIMARY KEY,
+            kind         TEXT NOT NULL CHECK (kind IN ('api_key','snippet','command','note')),
+            payload      BLOB NOT NULL,
+            is_favorite  INTEGER NOT NULL DEFAULT 0,
+            created_at   INTEGER NOT NULL,
+            updated_at   INTEGER NOT NULL,
+            last_used_at INTEGER,
+            copy_count   INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO items_new
+            SELECT id, kind, payload, is_favorite, created_at, updated_at, last_used_at, copy_count
+            FROM items;
+        DROP TABLE items;
+        ALTER TABLE items_new RENAME TO items;
+        CREATE INDEX IF NOT EXISTS idx_items_favorite ON items(is_favorite);
+        "#,
+    )?;
+
+    tx.execute(
+        "INSERT INTO meta(key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![META_SCHEMA_VERSION, "2".as_bytes()],
+    )?;
+    tx.commit()?;
     Ok(())
 }
 

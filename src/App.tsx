@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open as openFile } from "@tauri-apps/plugin-dialog";
 import { UnlockScreen } from "@/features/lock/UnlockScreen";
 import { useAutoLock } from "@/features/lock/useAutoLock";
 import { Sidebar } from "@/features/vault/Sidebar";
 import { ItemView } from "@/features/vault/ItemView";
 import { ItemFormDialog, type ItemFormData } from "@/features/vault/ItemFormDialog";
+import { ExportDialog } from "@/features/vault/ExportDialog";
+import { ImportDialog } from "@/features/vault/ImportDialog";
 import type { Item, VaultStatus } from "@/types";
 
 const AUTO_LOCK_MS = 15 * 60 * 1000;
@@ -19,6 +22,10 @@ export default function App() {
     open: false,
     item: null,
   });
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importPath, setImportPath] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     invoke<VaultStatus>("vault_status")
@@ -65,6 +72,9 @@ export default function App() {
           : it,
       ),
     );
+    setCopiedId(item.id);
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => setCopiedId(null), 1500);
   }
 
   async function handleToggleFavorite(item: Item) {
@@ -118,6 +128,21 @@ export default function App() {
     }
   }
 
+  async function handleImported() {
+    const list = await invoke<Item[]>("items_list");
+    setItems(list);
+  }
+
+  async function handleImportClick() {
+    const selected = await openFile({
+      multiple: false,
+      filters: [{ name: "Keystone Backup", extensions: ["kvault"] }],
+    });
+    if (selected && typeof selected === "string") {
+      setImportPath(selected);
+    }
+  }
+
   async function handleDelete(item: Item) {
     await invoke("item_delete", { id: item.id });
     setItems((prev) => prev.filter((it) => it.id !== item.id));
@@ -127,6 +152,35 @@ export default function App() {
   useAutoLock(status === "unlocked", AUTO_LOCK_MS, () => {
     void handleLock();
   });
+
+  useEffect(() => {
+    if (status !== "unlocked") return;
+    function handleKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+      if (e.ctrlKey && e.key === "Tab") {
+        e.preventDefault();
+        if (items.length === 0) return;
+        const sorted = [...items].sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
+        const idx = sorted.findIndex((it) => it.id === selectedId);
+        const nextIdx =
+          idx === -1
+            ? 0
+            : e.shiftKey
+              ? (idx === 0 ? sorted.length - 1 : idx - 1)
+              : (idx === sorted.length - 1 ? 0 : idx + 1);
+        setSelectedId(sorted[nextIdx].id);
+      } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        const sel = items.find((it) => it.id === selectedId);
+        if (sel) void handleCopy(sel);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [items, selectedId, status]);
 
   if (status === null) {
     return (
@@ -154,19 +208,30 @@ export default function App() {
           items={items}
           query={query}
           selectedId={selectedId}
+          copiedId={copiedId}
           onQueryChange={setQuery}
           onSelect={setSelectedId}
+          onCopy={handleCopy}
           onCreate={() => setFormDialog({ open: true, item: null })}
           onLock={handleLock}
+          onExport={() => setExportOpen(true)}
+          onImport={handleImportClick}
         />
         <main className="flex flex-1 flex-col overflow-hidden">
           <ItemView
             item={selected}
+            isCopied={selected ? selected.id === copiedId : false}
             onCopy={handleCopy}
             onToggleFavorite={handleToggleFavorite}
             onEdit={(item) => setFormDialog({ open: true, item })}
             onDelete={handleDelete}
+            onTagClick={setQuery}
           />
+          {selected && (
+            <div className="border-t border-border px-4 py-1.5 text-right text-[10px] text-muted-foreground/60">
+              <kbd className="font-sans">Ctrl+Shift+C</kbd> to copy value
+            </div>
+          )}
         </main>
       </div>
 
@@ -175,6 +240,12 @@ export default function App() {
         item={formDialog.item}
         onClose={() => setFormDialog({ open: false, item: null })}
         onSave={handleSave}
+      />
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
+      <ImportDialog
+        path={importPath}
+        onClose={() => setImportPath(null)}
+        onImported={handleImported}
       />
     </>
   );

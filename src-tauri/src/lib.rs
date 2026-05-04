@@ -94,10 +94,21 @@ fn item_mark_used(state: VaultStateRef<'_>, id: String) -> Result<()> {
     state.mark_used(&id)
 }
 
+#[tauri::command]
+fn vault_export(state: VaultStateRef<'_>, path: String, passphrase: String) -> Result<usize> {
+    state.export_vault(&path, &passphrase)
+}
+
+#[tauri::command]
+fn vault_import(state: VaultStateRef<'_>, path: String, passphrase: String) -> Result<usize> {
+    state.import_vault(&path, &passphrase)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -170,6 +181,8 @@ pub fn run() {
             item_delete,
             item_set_favorite,
             item_mark_used,
+            vault_export,
+            vault_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
