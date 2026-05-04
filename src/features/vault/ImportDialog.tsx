@@ -10,15 +10,12 @@ import {
   Input,
   Label,
 } from "@/components/ui";
+import { basename } from "@/lib/utils";
 
 interface ImportDialogProps {
   path: string | null;
   onClose: () => void;
   onImported: (count: number) => Promise<void>;
-}
-
-function basename(p: string): string {
-  return p.split(/[/\\]/).pop() ?? p;
 }
 
 export function ImportDialog({ path, onClose, onImported }: ImportDialogProps) {

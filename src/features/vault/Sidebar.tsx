@@ -1,8 +1,9 @@
-import { LuSearch, LuStar, LuPlus, LuLock, LuArchive, LuArchiveRestore, LuEllipsisVertical, LuCopy, LuCheck } from "react-icons/lu";
+import { LuSearch, LuStar, LuPlus, LuLock, LuArchive, LuArchiveRestore, LuEllipsisVertical, LuCopy, LuCheck, LuX } from "react-icons/lu";
 import {
   Input,
   IconButton,
   List,
+  ListItem,
   ListSection,
   ListSectionLabel,
   DropdownMenu,
@@ -31,24 +32,36 @@ interface SidebarProps {
 
 export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onSelect, onCopy, onCreate, onLock, onExport, onImport }: SidebarProps) {
   const isSearching = query.trim().length > 0;
-  const sorted = [...items].sort((a, b) => a.title.localeCompare(b.title));
-  const favorites = sorted.filter((it) => it.isFavorite);
-  const rest = sorted.filter((it) => !it.isFavorite);
+  const favorites = items.filter((it) => it.isFavorite);
+  const rest = items.filter((it) => !it.isFavorite);
 
   const filtered = isSearching
-    ? sorted.filter((it) => matches(it, query))
+    ? items.filter((it) => matches(it, query))
     : null;
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-card">
-      <div className="flex items-center gap-2 border-b border-border p-3">
+      <div className="flex items-center gap-2 border-b border-border p-2">
         <Input
+          className="flex-1"
           placeholder="Filter items…"
           leadingIcon={<LuSearch />}
+          trailingIcon={
+            query.length > 0 ? (
+              <IconButton
+                size="sm"
+                aria-label="Clear filter"
+                onClick={() => onQueryChange("")}
+                className="-mr-1.5"
+              >
+                <LuX />
+              </IconButton>
+            ) : undefined
+          }
           value={query}
           onChange={(e) => onQueryChange(e.currentTarget.value)}
         />
-        <IconButton aria-label="New item" variant="primary" onClick={onCreate}>
+        <IconButton aria-label="New item" variant="primary" onClick={onCreate} className="shrink-0">
           <LuPlus />
         </IconButton>
       </div>
@@ -113,7 +126,7 @@ export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onS
       </div>
 
       <div className="px-3 pb-1.5 pt-1 text-[10px] text-muted-foreground/60">
-        <kbd className="font-sans">Ctrl+Tab</kbd> to navigate
+        <kbd className="font-sans">Ctrl+Tab</kbd> / <kbd className="font-sans">Ctrl+Shift+Tab</kbd> to navigate
       </div>
       <div className="flex items-center justify-between border-t border-border p-2">
         <span className="px-2 text-xs text-muted-foreground">
@@ -158,57 +171,38 @@ function SidebarItem({
   onCopy: () => void;
   showFavoriteIndicator?: boolean;
 }) {
-  function handleCopyClick(e: React.MouseEvent) {
-    e.stopPropagation();
-    onCopy();
-  }
-
+  const showFavorite = showFavoriteIndicator && item.isFavorite && !isCopied;
   return (
-    <li className="contents">
-      <div className="group relative">
-        <button
-          type="button"
-          data-selected={selected ? "true" : undefined}
-          onClick={onSelect}
-          className={cn(
-            "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 pr-9 text-left text-sm outline-none transition-colors",
-            "text-foreground hover:bg-accent hover:text-accent-foreground",
-            "focus-visible:ring-2 focus-visible:ring-ring",
-            "data-[selected=true]:bg-accent data-[selected=true]:text-foreground",
-          )}
-        >
-          <span
-            className={cn(
-              "flex shrink-0 items-center [&_svg]:size-4",
-              selected
-                ? "text-primary"
-                : "text-muted-foreground group-hover:text-accent-foreground",
-            )}
-          >
-            {typeIcon(item.kind)}
-          </span>
-          <span className="flex-1 truncate">{item.title}</span>
-        </button>
-
-        {showFavoriteIndicator && item.isFavorite && !isCopied && (
-          <LuStar className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 fill-primary text-primary group-hover:hidden" />
-        )}
-
-        <button
-          type="button"
+    <ListItem
+      selected={selected}
+      onClick={onSelect}
+      leadingIcon={typeIcon(item.kind)}
+      trailingIcon={
+        showFavorite ? (
+          <LuStar className="fill-primary text-primary group-hover/row:hidden" />
+        ) : undefined
+      }
+      trailingAction={
+        <IconButton
+          size="sm"
           aria-label={`Copy value of ${item.title}`}
-          onClick={handleCopyClick}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCopy();
+          }}
           className={cn(
-            "absolute right-1.5 top-1/2 size-7 -translate-y-1/2 items-center justify-center rounded-md transition-colors [&_svg]:size-3.5",
+            "absolute right-1.5 top-1/2 -translate-y-1/2",
             isCopied
               ? "inline-flex text-success hover:text-success"
-              : "hidden text-muted-foreground hover:text-foreground group-hover:inline-flex",
+              : "hidden group-hover/row:inline-flex",
           )}
         >
           {isCopied ? <LuCheck /> : <LuCopy />}
-        </button>
-      </div>
-    </li>
+        </IconButton>
+      }
+    >
+      {item.title}
+    </ListItem>
   );
 }
 

@@ -155,14 +155,14 @@ function ValueCard({ item, isCopied, onCopy }: { item: Item; isCopied: boolean; 
             {display}
           </pre>
           {hasReveal && (
-            <button
-              type="button"
+            <IconButton
+              size="sm"
               aria-label={revealed ? "Hide value" : "Reveal value"}
               onClick={() => setRevealed((v) => !v)}
-              className="absolute right-1.5 top-1.5 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring outline-none [&_svg]:size-4"
+              className="absolute right-1.5 top-1.5"
             >
               {revealed ? <LuEyeOff /> : <LuEye />}
-            </button>
+            </IconButton>
           )}
         </div>
         <Button

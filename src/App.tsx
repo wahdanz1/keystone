@@ -26,6 +26,9 @@ export default function App() {
   const [importPath, setImportPath] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+  }, []);
 
   useEffect(() => {
     invoke<VaultStatus>("vault_status")
@@ -163,15 +166,14 @@ export default function App() {
       if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
         if (items.length === 0) return;
-        const sorted = [...items].sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
-        const idx = sorted.findIndex((it) => it.id === selectedId);
+        const idx = items.findIndex((it) => it.id === selectedId);
         const nextIdx =
           idx === -1
             ? 0
             : e.shiftKey
-              ? (idx === 0 ? sorted.length - 1 : idx - 1)
-              : (idx === sorted.length - 1 ? 0 : idx + 1);
-        setSelectedId(sorted[nextIdx].id);
+              ? (idx === 0 ? items.length - 1 : idx - 1)
+              : (idx === items.length - 1 ? 0 : idx + 1);
+        setSelectedId(items[nextIdx].id);
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "c") {
         e.preventDefault();
         const sel = items.find((it) => it.id === selectedId);

@@ -206,7 +206,7 @@ impl VaultState {
         tags: &[String],
     ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
-        self.with_conn_mut(|conn, key| db::insert_item(conn, key, &id, title, kind, value, notes, tags))?;
+        self.with_conn(|conn, key| db::insert_item(conn, key, &id, title, kind, value, notes, tags))?;
         Ok(id)
     }
 
@@ -219,7 +219,7 @@ impl VaultState {
         notes: Option<&str>,
         tags: &[String],
     ) -> Result<()> {
-        self.with_conn_mut(|conn, key| db::update_item(conn, key, id, title, kind, value, notes, tags))
+        self.with_conn(|conn, key| db::update_item(conn, key, id, title, kind, value, notes, tags))
     }
 
     pub fn delete_item(&self, id: &str) -> Result<()> {
@@ -278,13 +278,15 @@ impl VaultState {
             serde_json::from_slice(&plaintext).map_err(|_| VaultError::CorruptData)?;
         let count = payload.items.len();
         self.with_conn_mut(|conn, key| {
+            let tx = conn.transaction()?;
             for item in &payload.items {
                 let id = uuid::Uuid::new_v4().to_string();
                 db::insert_item(
-                    conn, key, &id, &item.title, &item.kind, &item.value,
+                    &tx, key, &id, &item.title, &item.kind, &item.value,
                     item.notes.as_deref(), &item.tags,
                 )?;
             }
+            tx.commit()?;
             Ok(())
         })?;
         Ok(count)

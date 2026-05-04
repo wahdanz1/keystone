@@ -12,36 +12,42 @@ export interface ListItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   selected?: boolean;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
+  /** Overlay action rendered absolutely on the right (for hover-revealed buttons, etc.). */
+  trailingAction?: ReactNode;
 }
 
 export const ListItem = forwardRef<HTMLButtonElement, ListItemProps>(
-  ({ className, selected, leadingIcon, trailingIcon, children, ...props }, ref) => (
+  ({ className, selected, leadingIcon, trailingIcon, trailingAction, children, ...props }, ref) => (
     <li className="contents">
-      <button
-        ref={ref}
-        type="button"
-        data-selected={selected ? "true" : undefined}
-        className={cn(
-          "group flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm outline-none transition-colors",
-          "text-foreground hover:bg-accent hover:text-accent-foreground",
-          "focus-visible:ring-2 focus-visible:ring-ring",
-          "data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground",
-          className,
-        )}
-        {...props}
-      >
-        {leadingIcon && (
-          <span className="flex shrink-0 items-center text-muted-foreground group-hover:text-accent-foreground group-data-[selected=true]:text-accent-foreground [&_svg]:size-4">
-            {leadingIcon}
-          </span>
-        )}
-        <span className="flex-1 truncate">{children}</span>
-        {trailingIcon && (
-          <span className="flex shrink-0 items-center text-muted-foreground [&_svg]:size-4">
-            {trailingIcon}
-          </span>
-        )}
-      </button>
+      <div className="group/row relative">
+        <button
+          ref={ref}
+          type="button"
+          data-selected={selected ? "true" : undefined}
+          className={cn(
+            "group/button flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm outline-none transition-colors",
+            "text-foreground hover:bg-accent hover:text-accent-foreground",
+            "focus-visible:ring-2 focus-visible:ring-ring",
+            "data-[selected=true]:bg-accent data-[selected=true]:text-foreground",
+            trailingAction && "pr-9",
+            className,
+          )}
+          {...props}
+        >
+          {leadingIcon && (
+            <span className="flex shrink-0 items-center text-muted-foreground group-hover/button:text-accent-foreground group-data-[selected=true]/button:text-primary [&_svg]:size-4">
+              {leadingIcon}
+            </span>
+          )}
+          <span className="flex-1 truncate">{children}</span>
+          {trailingIcon && (
+            <span className="flex shrink-0 items-center text-muted-foreground [&_svg]:size-4">
+              {trailingIcon}
+            </span>
+          )}
+        </button>
+        {trailingAction}
+      </div>
     </li>
   ),
 );

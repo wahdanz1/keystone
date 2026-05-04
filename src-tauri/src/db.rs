@@ -127,7 +127,7 @@ pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
             copy_count: copies,
         });
     }
-    items.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    items.sort_by_cached_key(|it| it.title.to_lowercase());
     Ok(items)
 }
 
@@ -150,7 +150,7 @@ pub fn mark_used(conn: &Connection, id: &str) -> Result<()> {
 }
 
 pub fn insert_item(
-    conn: &mut Connection,
+    conn: &Connection,
     key: &[u8; KEY_LEN],
     id: &str,
     title: &str,
@@ -177,7 +177,7 @@ pub fn insert_item(
 }
 
 pub fn update_item(
-    conn: &mut Connection,
+    conn: &Connection,
     key: &[u8; KEY_LEN],
     id: &str,
     title: &str,
@@ -279,11 +279,7 @@ pub fn migrate_v1_to_v2(conn: &mut Connection, key: &[u8; KEY_LEN]) -> Result<()
         "#,
     )?;
 
-    tx.execute(
-        "INSERT INTO meta(key, value) VALUES (?1, ?2)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        params![META_SCHEMA_VERSION, "2".as_bytes()],
-    )?;
+    set_meta_text(&tx, META_SCHEMA_VERSION, "2")?;
     tx.commit()?;
     Ok(())
 }

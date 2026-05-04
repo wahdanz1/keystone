@@ -22,7 +22,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       )}
       <input
         ref={ref}
-        className="h-full flex-1 bg-transparent text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-full w-full min-w-0 flex-1 bg-transparent text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50"
         {...props}
       />
       {trailingIcon && (
