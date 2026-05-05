@@ -8,6 +8,7 @@ export interface Item {
   notes: string | null;
   tags: string[];
   isFavorite: boolean;
+  isSensitive: boolean;
   collectionId: string | null;
   createdAt: number;
   updatedAt: number;

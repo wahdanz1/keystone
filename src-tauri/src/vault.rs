@@ -203,6 +203,12 @@ impl VaultState {
         if version == "2" {
             db::migrate_v2_to_v3(&mut conn)?;
         }
+        let version = db::get_meta(&conn, db::META_SCHEMA_VERSION)?
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
+        if version == "3" {
+            db::migrate_v3_to_v4(&mut conn)?;
+        }
 
         let mut init_cache = self.initialized.lock().map_err(|_| VaultError::Locked)?;
         *init_cache = Some(true);
@@ -232,10 +238,22 @@ impl VaultState {
         notes: Option<&str>,
         tags: &[String],
         collection_id: Option<&str>,
+        is_sensitive: bool,
     ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
         self.with_conn(|conn, key| {
-            db::insert_item(conn, key, &id, title, kind, value, notes, tags, collection_id)
+            db::insert_item(
+                conn,
+                key,
+                &id,
+                title,
+                kind,
+                value,
+                notes,
+                tags,
+                collection_id,
+                is_sensitive,
+            )
         })?;
         Ok(id)
     }
@@ -249,6 +267,7 @@ impl VaultState {
         notes: Option<&str>,
         tags: &[String],
         collection_id: Option<&str>,
+        is_sensitive: bool,
     ) -> Result<()> {
         self.with_conn(|conn, key| {
             db::update_item(
@@ -261,6 +280,7 @@ impl VaultState {
                 notes,
                 tags,
                 collection_id,
+                is_sensitive,
             )
         })
     }
@@ -349,6 +369,7 @@ impl VaultState {
             let tx = conn.transaction()?;
             for item in &payload.items {
                 let id = uuid::Uuid::new_v4().to_string();
+                let is_sensitive = item.kind == "api_key";
                 db::insert_item(
                     &tx,
                     key,
@@ -359,6 +380,7 @@ impl VaultState {
                     item.notes.as_deref(),
                     &item.tags,
                     None,
+                    is_sensitive,
                 )?;
             }
             tx.commit()?;

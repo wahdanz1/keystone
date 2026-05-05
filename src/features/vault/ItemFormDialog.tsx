@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { LuEye, LuEyeOff } from "react-icons/lu";
 import {
   Button,
   Dialog,
@@ -6,11 +7,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  IconButton,
   Input,
   Label,
   Select,
+  Switch,
   Textarea,
 } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import type { Collection, Item, ItemKind } from "@/types";
 
 const NEW_COLLECTION_VALUE = "__new__";
@@ -22,6 +26,11 @@ export interface ItemFormData {
   notes: string;
   tags: string[];
   collectionId: string | null;
+  isSensitive: boolean;
+}
+
+function defaultSensitiveFor(kind: ItemKind): boolean {
+  return kind === "api_key";
 }
 
 interface ItemFormDialogProps {
@@ -42,6 +51,8 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
   const [notes, setNotes] = useState("");
   const [tagsRaw, setTagsRaw] = useState("");
   const [collectionId, setCollectionId] = useState<string | null>(null);
+  const [isSensitive, setIsSensitive] = useState(true);
+  const [revealed, setRevealed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [newCollectionOpen, setNewCollectionOpen] = useState(false);
@@ -49,17 +60,26 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
 
   useEffect(() => {
     if (open) {
+      const initialKind = item?.kind ?? "api_key";
+      const initialSensitive = item?.isSensitive ?? defaultSensitiveFor(initialKind);
       setTitle(item?.title ?? "");
-      setKind(item?.kind ?? "api_key");
+      setKind(initialKind);
       setValue(item?.value ?? "");
       setNotes(item?.notes ?? "");
       setTagsRaw(item?.tags.join(", ") ?? "");
       setCollectionId(item?.collectionId ?? null);
+      setIsSensitive(initialSensitive);
+      setRevealed(!initialSensitive);
       setError(null);
       setNewCollectionOpen(false);
       setNewCollectionName("");
     }
   }, [open, item]);
+
+  function handleKindChange(nextKind: ItemKind) {
+    setKind(nextKind);
+    if (!item) setIsSensitive(defaultSensitiveFor(nextKind));
+  }
 
   function handleCollectionSelect(value: string) {
     if (value === NEW_COLLECTION_VALUE) {
@@ -97,6 +117,7 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
         notes: notes.trim(),
         tags,
         collectionId,
+        isSensitive,
       });
       onClose();
     } catch (err) {
@@ -120,7 +141,7 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
               <Select
                 id="item-kind"
                 value={kind}
-                onChange={(e) => setKind(e.currentTarget.value as ItemKind)}
+                onChange={(e) => handleKindChange(e.currentTarget.value as ItemKind)}
                 disabled={isPending}
               >
                 <option value="api_key">API Key</option>
@@ -144,16 +165,45 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="item-value">Value</Label>
-            <Textarea
-              id="item-value"
-              placeholder={valuePlaceholder(kind)}
-              value={value}
-              onChange={(e) => setValue(e.currentTarget.value)}
-              disabled={isPending}
-              rows={kind === "snippet" || kind === "command" ? 5 : 2}
-              className={kind !== "note" ? "font-mono" : undefined}
-            />
+            <div className="flex items-center justify-between">
+              <Label htmlFor="item-value">Value</Label>
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                Treat as sensitive
+                <Switch
+                  checked={isSensitive}
+                  onCheckedChange={setIsSensitive}
+                  disabled={isPending}
+                  aria-label="Treat as sensitive"
+                />
+              </label>
+            </div>
+            <div className="relative">
+              <Textarea
+                id="item-value"
+                placeholder={valuePlaceholder(kind)}
+                value={value}
+                onChange={(e) => setValue(e.currentTarget.value)}
+                disabled={isPending}
+                rows={kind === "snippet" || kind === "command" ? 5 : 2}
+                className={cn(
+                  kind !== "note" && "font-mono",
+                  isSensitive && "pr-11",
+                  isSensitive && !revealed && "[-webkit-text-security:disc]",
+                )}
+              />
+              {isSensitive && (
+                <IconButton
+                  type="button"
+                  size="sm"
+                  aria-label={revealed ? "Hide value" : "Reveal value"}
+                  onClick={() => setRevealed((v) => !v)}
+                  disabled={isPending}
+                  className="absolute right-1.5 top-1.5"
+                >
+                  {revealed ? <LuEyeOff /> : <LuEye />}
+                </IconButton>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col gap-1.5">

@@ -64,6 +64,7 @@ fn item_create(
     notes: Option<String>,
     tags: Vec<String>,
     collection_id: Option<String>,
+    is_sensitive: bool,
 ) -> Result<String> {
     state.create_item(
         &title,
@@ -72,6 +73,7 @@ fn item_create(
         notes.as_deref(),
         &tags,
         collection_id.as_deref(),
+        is_sensitive,
     )
 }
 
@@ -85,6 +87,7 @@ fn item_update(
     notes: Option<String>,
     tags: Vec<String>,
     collection_id: Option<String>,
+    is_sensitive: bool,
 ) -> Result<()> {
     state.update_item(
         &id,
@@ -94,6 +97,7 @@ fn item_update(
         notes.as_deref(),
         &tags,
         collection_id.as_deref(),
+        is_sensitive,
     )
 }
 

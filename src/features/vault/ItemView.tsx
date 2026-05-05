@@ -77,7 +77,7 @@ export function ItemView({ item, isCopied, onCopy, onToggleFavorite, onEdit, onD
           </div>
         </header>
 
-        <ValueCard key={item.id} item={item} isCopied={isCopied} onCopy={onCopy} />
+        <ValueCard key={`${item.id}-${item.isSensitive}`} item={item} isCopied={isCopied} onCopy={onCopy} />
 
         {item.notes && (
           <Card className="mt-5">
@@ -136,12 +136,12 @@ export function ItemView({ item, isCopied, onCopy, onToggleFavorite, onEdit, onD
 }
 
 function ValueCard({ item, isCopied, onCopy }: { item: Item; isCopied: boolean; onCopy: (item: Item) => void }) {
-  const [revealed, setRevealed] = useState(item.kind !== "api_key");
+  const [revealed, setRevealed] = useState(!item.isSensitive);
 
-  const isMasked = item.kind === "api_key" && !revealed;
+  const isMasked = item.isSensitive && !revealed;
   const display = isMasked ? "•".repeat(Math.min(item.value.length, 32)) : item.value;
   const isMultiline = item.value.includes("\n") || item.kind === "snippet" || item.kind === "command";
-  const hasReveal = item.kind === "api_key";
+  const hasReveal = item.isSensitive;
 
   return (
     <Card>

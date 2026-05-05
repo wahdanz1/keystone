@@ -16,6 +16,7 @@ pub struct Item {
     pub notes: Option<String>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
+    pub is_sensitive: bool,
     pub collection_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -74,6 +75,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             kind          TEXT NOT NULL CHECK (kind IN ('api_key','snippet','command','note')),
             payload       BLOB NOT NULL,
             is_favorite   INTEGER NOT NULL DEFAULT 0,
+            is_sensitive  INTEGER NOT NULL DEFAULT 0,
             collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
             created_at    INTEGER NOT NULL,
             updated_at    INTEGER NOT NULL,
@@ -85,7 +87,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_items_collection ON items(collection_id);
         "#,
     )?;
-    set_meta_text(conn, META_SCHEMA_VERSION, "3")?;
+    set_meta_text(conn, META_SCHEMA_VERSION, "4")?;
     Ok(())
 }
 
@@ -113,13 +115,14 @@ fn set_meta_text(conn: &Connection, key: &str, value: &str) -> Result<()> {
 
 pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, payload, is_favorite, collection_id, created_at, updated_at, last_used_at, copy_count
+        "SELECT id, kind, payload, is_favorite, is_sensitive, collection_id, created_at, updated_at, last_used_at, copy_count
          FROM items",
     )?;
     let rows: Vec<(
         String,
         String,
         Vec<u8>,
+        i64,
         i64,
         Option<String>,
         i64,
@@ -138,12 +141,13 @@ pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
                 row.get(6)?,
                 row.get(7)?,
                 row.get(8)?,
+                row.get(9)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let mut items = Vec::with_capacity(rows.len());
-    for (id, kind, payload, fav, collection_id, created, updated, last_used, copies) in rows {
+    for (id, kind, payload, fav, sens, collection_id, created, updated, last_used, copies) in rows {
         let payload_bytes = aead_open(key, &payload)?;
         let p: EncryptedPayload = serde_json::from_slice(&payload_bytes)?;
         items.push(Item {
@@ -154,6 +158,7 @@ pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
             notes: p.notes,
             tags: p.tags,
             is_favorite: fav != 0,
+            is_sensitive: sens != 0,
             collection_id,
             created_at: created,
             updated_at: updated,
@@ -193,6 +198,7 @@ pub fn insert_item(
     notes: Option<&str>,
     tags: &[String],
     collection_id: Option<&str>,
+    is_sensitive: bool,
 ) -> Result<()> {
     let payload = EncryptedPayload {
         title: title.to_string(),
@@ -204,9 +210,9 @@ pub fn insert_item(
     let sealed = seal(key, &payload_json)?;
     let now = unix_millis();
     conn.execute(
-        "INSERT INTO items(id, kind, payload, is_favorite, collection_id, created_at, updated_at, last_used_at, copy_count)
-         VALUES (?1, ?2, ?3, 0, ?4, ?5, ?5, NULL, 0)",
-        params![id, kind, sealed, collection_id, now],
+        "INSERT INTO items(id, kind, payload, is_favorite, is_sensitive, collection_id, created_at, updated_at, last_used_at, copy_count)
+         VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?6, NULL, 0)",
+        params![id, kind, sealed, if is_sensitive { 1 } else { 0 }, collection_id, now],
     )?;
     Ok(())
 }
@@ -221,6 +227,7 @@ pub fn update_item(
     notes: Option<&str>,
     tags: &[String],
     collection_id: Option<&str>,
+    is_sensitive: bool,
 ) -> Result<()> {
     let payload = EncryptedPayload {
         title: title.to_string(),
@@ -232,8 +239,8 @@ pub fn update_item(
     let sealed = seal(key, &payload_json)?;
     let now = unix_millis();
     conn.execute(
-        "UPDATE items SET kind = ?1, payload = ?2, collection_id = ?3, updated_at = ?4 WHERE id = ?5",
-        params![kind, sealed, collection_id, now, id],
+        "UPDATE items SET kind = ?1, payload = ?2, collection_id = ?3, is_sensitive = ?4, updated_at = ?5 WHERE id = ?6",
+        params![kind, sealed, collection_id, if is_sensitive { 1 } else { 0 }, now, id],
     )?;
     Ok(())
 }
@@ -398,6 +405,19 @@ pub fn migrate_v2_to_v3(conn: &mut Connection) -> Result<()> {
         "#,
     )?;
     set_meta_text(&tx, META_SCHEMA_VERSION, "3")?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn migrate_v3_to_v4(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute_batch(
+        r#"
+        ALTER TABLE items ADD COLUMN is_sensitive INTEGER NOT NULL DEFAULT 0;
+        UPDATE items SET is_sensitive = 1 WHERE kind = 'api_key';
+        "#,
+    )?;
+    set_meta_text(&tx, META_SCHEMA_VERSION, "4")?;
     tx.commit()?;
     Ok(())
 }

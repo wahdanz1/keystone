@@ -86,7 +86,7 @@ export default function App() {
 
   async function handleCopy(item: Item) {
     const copiedValue = item.value;
-    const isSensitive = item.kind === "api_key";
+    const isSensitive = item.isSensitive;
     const excludeFromHistory = isSensitive || !(settings?.allowNonSensitiveInHistory ?? false);
     await invoke("clipboard_copy", { text: copiedValue, excludeFromHistory });
     await invoke("item_mark_used", { id: item.id }).catch(() => {});
@@ -133,6 +133,7 @@ export default function App() {
         notes: data.notes || null,
         tags: data.tags,
         collectionId: data.collectionId,
+        isSensitive: data.isSensitive,
       });
     } else {
       const id = await invoke<string>("item_create", {
@@ -142,6 +143,7 @@ export default function App() {
         notes: data.notes || null,
         tags: data.tags,
         collectionId: data.collectionId,
+        isSensitive: data.isSensitive,
       });
       setSelectedId(id);
     }
