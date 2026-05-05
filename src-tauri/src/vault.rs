@@ -12,7 +12,7 @@ use crate::crypto::{
     check_verifier, derive_key, make_verifier, open as aead_open, random_bytes, seal, KdfParams,
     DEFAULT_KDF_PARAMS, KEY_LEN, SALT_LEN,
 };
-use crate::db::{self, Item};
+use crate::db::{self, Collection, Item};
 use crate::error::{Result, VaultError};
 
 const DB_FILENAME: &str = "vault.db";
@@ -73,6 +73,12 @@ impl VaultState {
 
     fn db_path(&self) -> PathBuf {
         self.data_dir.join(DB_FILENAME)
+    }
+
+    fn open_conn(&self) -> Result<Connection> {
+        let conn = Connection::open(self.db_path())?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        Ok(conn)
     }
 
     pub fn data_dir(&self) -> &PathBuf {
@@ -139,14 +145,14 @@ impl VaultState {
             return Err(VaultError::PasswordTooShort);
         }
         if self.db_path().exists() {
-            let probe = Connection::open(self.db_path())?;
+            let probe = self.open_conn()?;
             if db::get_meta(&probe, db::META_SALT).ok().flatten().is_some() {
                 return Err(VaultError::AlreadyInitialized);
             }
         }
         fs::create_dir_all(&self.data_dir)?;
 
-        let conn = Connection::open(self.db_path())?;
+        let conn = self.open_conn()?;
         db::init_schema(&conn)?;
 
         let salt: [u8; SALT_LEN] = random_bytes();
@@ -171,7 +177,7 @@ impl VaultState {
         if !self.db_path().exists() {
             return Err(VaultError::NotInitialized);
         }
-        let mut conn = Connection::open(self.db_path())?;
+        let mut conn = self.open_conn()?;
 
         let salt = db::get_meta(&conn, db::META_SALT)?.ok_or(VaultError::NotInitialized)?;
         let verifier = db::get_meta(&conn, db::META_VERIFIER)?.ok_or(VaultError::NotInitialized)?;
@@ -190,6 +196,12 @@ impl VaultState {
             .unwrap_or_default();
         if version == "1" {
             db::migrate_v1_to_v2(&mut conn, &key)?;
+        }
+        let version = db::get_meta(&conn, db::META_SCHEMA_VERSION)?
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
+        if version == "2" {
+            db::migrate_v2_to_v3(&mut conn)?;
         }
 
         let mut init_cache = self.initialized.lock().map_err(|_| VaultError::Locked)?;
@@ -219,10 +231,11 @@ impl VaultState {
         value: &str,
         notes: Option<&str>,
         tags: &[String],
+        collection_id: Option<&str>,
     ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
         self.with_conn(|conn, key| {
-            db::insert_item(conn, key, &id, title, kind, value, notes, tags)
+            db::insert_item(conn, key, &id, title, kind, value, notes, tags, collection_id)
         })?;
         Ok(id)
     }
@@ -235,8 +248,39 @@ impl VaultState {
         value: &str,
         notes: Option<&str>,
         tags: &[String],
+        collection_id: Option<&str>,
     ) -> Result<()> {
-        self.with_conn(|conn, key| db::update_item(conn, key, id, title, kind, value, notes, tags))
+        self.with_conn(|conn, key| {
+            db::update_item(
+                conn,
+                key,
+                id,
+                title,
+                kind,
+                value,
+                notes,
+                tags,
+                collection_id,
+            )
+        })
+    }
+
+    pub fn list_collections(&self) -> Result<Vec<Collection>> {
+        self.with_conn(|conn, key| db::list_collections(conn, key))
+    }
+
+    pub fn create_collection(&self, name: &str) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        self.with_conn(|conn, key| db::insert_collection(conn, key, &id, name))?;
+        Ok(id)
+    }
+
+    pub fn rename_collection(&self, id: &str, name: &str) -> Result<()> {
+        self.with_conn(|conn, key| db::update_collection(conn, key, id, name))
+    }
+
+    pub fn delete_collection(&self, id: &str) -> Result<()> {
+        self.with_conn(|conn, _key| db::delete_collection(conn, id))
     }
 
     pub fn delete_item(&self, id: &str) -> Result<()> {
@@ -314,6 +358,7 @@ impl VaultState {
                     &item.value,
                     item.notes.as_deref(),
                     &item.tags,
+                    None,
                 )?;
             }
             tx.commit()?;

@@ -13,7 +13,7 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-use crate::db::Item;
+use crate::db::{Collection, Item};
 use crate::error::Result;
 use crate::vault::{VaultState, VaultStatus};
 
@@ -63,8 +63,16 @@ fn item_create(
     value: String,
     notes: Option<String>,
     tags: Vec<String>,
+    collection_id: Option<String>,
 ) -> Result<String> {
-    state.create_item(&title, &kind, &value, notes.as_deref(), &tags)
+    state.create_item(
+        &title,
+        &kind,
+        &value,
+        notes.as_deref(),
+        &tags,
+        collection_id.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -76,8 +84,37 @@ fn item_update(
     value: String,
     notes: Option<String>,
     tags: Vec<String>,
+    collection_id: Option<String>,
 ) -> Result<()> {
-    state.update_item(&id, &title, &kind, &value, notes.as_deref(), &tags)
+    state.update_item(
+        &id,
+        &title,
+        &kind,
+        &value,
+        notes.as_deref(),
+        &tags,
+        collection_id.as_deref(),
+    )
+}
+
+#[tauri::command]
+fn collections_list(state: VaultStateRef<'_>) -> Result<Vec<Collection>> {
+    state.list_collections()
+}
+
+#[tauri::command]
+fn collection_create(state: VaultStateRef<'_>, name: String) -> Result<String> {
+    state.create_collection(&name)
+}
+
+#[tauri::command]
+fn collection_rename(state: VaultStateRef<'_>, id: String, name: String) -> Result<()> {
+    state.rename_collection(&id, &name)
+}
+
+#[tauri::command]
+fn collection_delete(state: VaultStateRef<'_>, id: String) -> Result<()> {
+    state.delete_collection(&id)
 }
 
 #[tauri::command]
@@ -198,6 +235,10 @@ pub fn run() {
             vault_export,
             vault_import,
             vault_data_dir,
+            collections_list,
+            collection_create,
+            collection_rename,
+            collection_delete,
             clipboard::clipboard_copy,
             clipboard::clipboard_clear,
         ])

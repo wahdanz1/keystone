@@ -8,10 +8,17 @@ export interface Item {
   notes: string | null;
   tags: string[];
   isFavorite: boolean;
+  collectionId: string | null;
   createdAt: number;
   updatedAt: number;
   lastUsedAt: number | null;
   copyCount: number;
+}
+
+export interface Collection {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
 export type VaultStatus = "uninitialized" | "locked" | "unlocked";

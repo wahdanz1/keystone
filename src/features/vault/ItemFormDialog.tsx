@@ -11,7 +11,9 @@ import {
   Select,
   Textarea,
 } from "@/components/ui";
-import type { Item, ItemKind } from "@/types";
+import type { Collection, Item, ItemKind } from "@/types";
+
+const NEW_COLLECTION_VALUE = "__new__";
 
 export interface ItemFormData {
   title: string;
@@ -19,16 +21,19 @@ export interface ItemFormData {
   value: string;
   notes: string;
   tags: string[];
+  collectionId: string | null;
 }
 
 interface ItemFormDialogProps {
   open: boolean;
   item?: Item | null;
+  collections: Collection[];
   onClose: () => void;
   onSave: (data: ItemFormData) => Promise<void>;
+  onCollectionCreate: (name: string) => Promise<string>;
 }
 
-export function ItemFormDialog({ open, item, onClose, onSave }: ItemFormDialogProps) {
+export function ItemFormDialog({ open, item, collections, onClose, onSave, onCollectionCreate }: ItemFormDialogProps) {
   const isEdit = !!item;
 
   const [title, setTitle] = useState("");
@@ -36,8 +41,11 @@ export function ItemFormDialog({ open, item, onClose, onSave }: ItemFormDialogPr
   const [value, setValue] = useState("");
   const [notes, setNotes] = useState("");
   const [tagsRaw, setTagsRaw] = useState("");
+  const [collectionId, setCollectionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const [newCollectionOpen, setNewCollectionOpen] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -46,9 +54,33 @@ export function ItemFormDialog({ open, item, onClose, onSave }: ItemFormDialogPr
       setValue(item?.value ?? "");
       setNotes(item?.notes ?? "");
       setTagsRaw(item?.tags.join(", ") ?? "");
+      setCollectionId(item?.collectionId ?? null);
       setError(null);
+      setNewCollectionOpen(false);
+      setNewCollectionName("");
     }
   }, [open, item]);
+
+  function handleCollectionSelect(value: string) {
+    if (value === NEW_COLLECTION_VALUE) {
+      setNewCollectionOpen(true);
+      return;
+    }
+    setCollectionId(value === "" ? null : value);
+  }
+
+  async function handleCreateCollection() {
+    const name = newCollectionName.trim();
+    if (!name) return;
+    try {
+      const id = await onCollectionCreate(name);
+      setCollectionId(id);
+      setNewCollectionOpen(false);
+      setNewCollectionName("");
+    } catch (err) {
+      setError(typeof err === "string" ? err : err instanceof Error ? err.message : "Could not create collection.");
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -58,7 +90,14 @@ export function ItemFormDialog({ open, item, onClose, onSave }: ItemFormDialogPr
     setIsPending(true);
     try {
       const tags = [...new Set(tagsRaw.split(",").map((t) => t.trim()).filter(Boolean))];
-      await onSave({ title: title.trim(), kind, value: value.trim(), notes: notes.trim(), tags });
+      await onSave({
+        title: title.trim(),
+        kind,
+        value: value.trim(),
+        notes: notes.trim(),
+        tags,
+        collectionId,
+      });
       onClose();
     } catch (err) {
       setError(typeof err === "string" ? err : err instanceof Error ? err.message : "Something went wrong.");
@@ -69,37 +108,39 @@ export function ItemFormDialog({ open, item, onClose, onSave }: ItemFormDialogPr
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent>
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit item" : "New item"}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 pt-1">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="item-kind">Type</Label>
-            <Select
-              id="item-kind"
-              value={kind}
-              onChange={(e) => setKind(e.currentTarget.value as ItemKind)}
-              disabled={isPending}
-            >
-              <option value="api_key">API Key</option>
-              <option value="snippet">Snippet</option>
-              <option value="command">Command</option>
-              <option value="note">Note</option>
-            </Select>
-          </div>
+          <div className="flex gap-4">
+            <div className="flex w-1/2 flex-col gap-1.5">
+              <Label htmlFor="item-kind">Type</Label>
+              <Select
+                id="item-kind"
+                value={kind}
+                onChange={(e) => setKind(e.currentTarget.value as ItemKind)}
+                disabled={isPending}
+              >
+                <option value="api_key">API Key</option>
+                <option value="snippet">Snippet</option>
+                <option value="command">Command</option>
+                <option value="note">Note</option>
+              </Select>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="item-title">Title</Label>
-            <Input
-              id="item-title"
-              placeholder="e.g. OpenAI API Key"
-              value={title}
-              onChange={(e) => setTitle(e.currentTarget.value)}
-              disabled={isPending}
-              autoFocus={!isEdit}
-            />
+            <div className="flex w-1/2 flex-col gap-1.5">
+              <Label htmlFor="item-title">Title</Label>
+              <Input
+                id="item-title"
+                placeholder="e.g. OpenAI API Key"
+                value={title}
+                onChange={(e) => setTitle(e.currentTarget.value)}
+                disabled={isPending}
+                autoFocus={!isEdit}
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -126,7 +167,7 @@ export function ItemFormDialog({ open, item, onClose, onSave }: ItemFormDialogPr
               value={notes}
               onChange={(e) => setNotes(e.currentTarget.value)}
               disabled={isPending}
-              rows={2}
+              rows={3}
             />
           </div>
 
@@ -142,6 +183,57 @@ export function ItemFormDialog({ open, item, onClose, onSave }: ItemFormDialogPr
               onChange={(e) => setTagsRaw(e.currentTarget.value)}
               disabled={isPending}
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="item-collection">
+              Collection{" "}
+              <span className="font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            {newCollectionOpen ? (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="New collection name"
+                  value={newCollectionName}
+                  onChange={(e) => setNewCollectionName(e.currentTarget.value)}
+                  disabled={isPending}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleCreateCollection();
+                    } else if (e.key === "Escape") {
+                      setNewCollectionOpen(false);
+                      setNewCollectionName("");
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <Button type="button" variant="outline" onClick={handleCreateCollection} disabled={!newCollectionName.trim()}>
+                  Create
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => { setNewCollectionOpen(false); setNewCollectionName(""); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Select
+                id="item-collection"
+                value={collectionId ?? ""}
+                onChange={(e) => handleCollectionSelect(e.currentTarget.value)}
+                disabled={isPending}
+              >
+                <option value="">None (Uncategorized)</option>
+                {collections.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+                <option value={NEW_COLLECTION_VALUE}>+ Create new collection…</option>
+              </Select>
+            )}
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

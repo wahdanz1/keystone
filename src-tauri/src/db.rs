@@ -16,10 +16,19 @@ pub struct Item {
     pub notes: Option<String>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
+    pub collection_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub last_used_at: Option<i64>,
     pub copy_count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Collection {
+    pub id: String,
+    pub name: String,
+    pub created_at: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -28,6 +37,11 @@ struct EncryptedPayload {
     value: String,
     notes: Option<String>,
     tags: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct EncryptedCollectionPayload {
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -49,21 +63,29 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             value BLOB NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS collections (
+            id         TEXT PRIMARY KEY,
+            payload    BLOB NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS items (
-            id           TEXT PRIMARY KEY,
-            kind         TEXT NOT NULL CHECK (kind IN ('api_key','snippet','command','note')),
-            payload      BLOB NOT NULL,
-            is_favorite  INTEGER NOT NULL DEFAULT 0,
-            created_at   INTEGER NOT NULL,
-            updated_at   INTEGER NOT NULL,
-            last_used_at INTEGER,
-            copy_count   INTEGER NOT NULL DEFAULT 0
+            id            TEXT PRIMARY KEY,
+            kind          TEXT NOT NULL CHECK (kind IN ('api_key','snippet','command','note')),
+            payload       BLOB NOT NULL,
+            is_favorite   INTEGER NOT NULL DEFAULT 0,
+            collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
+            created_at    INTEGER NOT NULL,
+            updated_at    INTEGER NOT NULL,
+            last_used_at  INTEGER,
+            copy_count    INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_items_favorite ON items(is_favorite);
+        CREATE INDEX IF NOT EXISTS idx_items_collection ON items(collection_id);
         "#,
     )?;
-    set_meta_text(conn, META_SCHEMA_VERSION, "2")?;
+    set_meta_text(conn, META_SCHEMA_VERSION, "3")?;
     Ok(())
 }
 
@@ -91,10 +113,20 @@ fn set_meta_text(conn: &Connection, key: &str, value: &str) -> Result<()> {
 
 pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, payload, is_favorite, created_at, updated_at, last_used_at, copy_count
+        "SELECT id, kind, payload, is_favorite, collection_id, created_at, updated_at, last_used_at, copy_count
          FROM items",
     )?;
-    let rows: Vec<(String, String, Vec<u8>, i64, i64, i64, Option<i64>, i64)> = stmt
+    let rows: Vec<(
+        String,
+        String,
+        Vec<u8>,
+        i64,
+        Option<String>,
+        i64,
+        i64,
+        Option<i64>,
+        i64,
+    )> = stmt
         .query_map([], |row| {
             Ok((
                 row.get(0)?,
@@ -105,12 +137,13 @@ pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
                 row.get(5)?,
                 row.get(6)?,
                 row.get(7)?,
+                row.get(8)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let mut items = Vec::with_capacity(rows.len());
-    for (id, kind, payload, fav, created, updated, last_used, copies) in rows {
+    for (id, kind, payload, fav, collection_id, created, updated, last_used, copies) in rows {
         let payload_bytes = aead_open(key, &payload)?;
         let p: EncryptedPayload = serde_json::from_slice(&payload_bytes)?;
         items.push(Item {
@@ -121,6 +154,7 @@ pub fn list_items(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Item>> {
             notes: p.notes,
             tags: p.tags,
             is_favorite: fav != 0,
+            collection_id,
             created_at: created,
             updated_at: updated,
             last_used_at: last_used,
@@ -158,6 +192,7 @@ pub fn insert_item(
     value: &str,
     notes: Option<&str>,
     tags: &[String],
+    collection_id: Option<&str>,
 ) -> Result<()> {
     let payload = EncryptedPayload {
         title: title.to_string(),
@@ -169,9 +204,9 @@ pub fn insert_item(
     let sealed = seal(key, &payload_json)?;
     let now = unix_millis();
     conn.execute(
-        "INSERT INTO items(id, kind, payload, is_favorite, created_at, updated_at, last_used_at, copy_count)
-         VALUES (?1, ?2, ?3, 0, ?4, ?4, NULL, 0)",
-        params![id, kind, sealed, now],
+        "INSERT INTO items(id, kind, payload, is_favorite, collection_id, created_at, updated_at, last_used_at, copy_count)
+         VALUES (?1, ?2, ?3, 0, ?4, ?5, ?5, NULL, 0)",
+        params![id, kind, sealed, collection_id, now],
     )?;
     Ok(())
 }
@@ -185,6 +220,7 @@ pub fn update_item(
     value: &str,
     notes: Option<&str>,
     tags: &[String],
+    collection_id: Option<&str>,
 ) -> Result<()> {
     let payload = EncryptedPayload {
         title: title.to_string(),
@@ -196,14 +232,77 @@ pub fn update_item(
     let sealed = seal(key, &payload_json)?;
     let now = unix_millis();
     conn.execute(
-        "UPDATE items SET kind = ?1, payload = ?2, updated_at = ?3 WHERE id = ?4",
-        params![kind, sealed, now, id],
+        "UPDATE items SET kind = ?1, payload = ?2, collection_id = ?3, updated_at = ?4 WHERE id = ?5",
+        params![kind, sealed, collection_id, now, id],
     )?;
     Ok(())
 }
 
 pub fn delete_item(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("DELETE FROM items WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn list_collections(conn: &Connection, key: &[u8; KEY_LEN]) -> Result<Vec<Collection>> {
+    let mut stmt = conn.prepare("SELECT id, payload, created_at FROM collections")?;
+    let rows: Vec<(String, Vec<u8>, i64)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut out = Vec::with_capacity(rows.len());
+    for (id, payload, created) in rows {
+        let payload_bytes = aead_open(key, &payload)?;
+        let p: EncryptedCollectionPayload = serde_json::from_slice(&payload_bytes)?;
+        out.push(Collection {
+            id,
+            name: p.name,
+            created_at: created,
+        });
+    }
+    out.sort_by_cached_key(|c| c.name.to_lowercase());
+    Ok(out)
+}
+
+pub fn insert_collection(
+    conn: &Connection,
+    key: &[u8; KEY_LEN],
+    id: &str,
+    name: &str,
+) -> Result<()> {
+    let payload = EncryptedCollectionPayload {
+        name: name.to_string(),
+    };
+    let sealed = seal(key, &serde_json::to_vec(&payload)?)?;
+    conn.execute(
+        "INSERT INTO collections(id, payload, created_at) VALUES (?1, ?2, ?3)",
+        params![id, sealed, unix_millis()],
+    )?;
+    Ok(())
+}
+
+pub fn update_collection(
+    conn: &Connection,
+    key: &[u8; KEY_LEN],
+    id: &str,
+    name: &str,
+) -> Result<()> {
+    let payload = EncryptedCollectionPayload {
+        name: name.to_string(),
+    };
+    let sealed = seal(key, &serde_json::to_vec(&payload)?)?;
+    conn.execute(
+        "UPDATE collections SET payload = ?1 WHERE id = ?2",
+        params![sealed, id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_collection(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE items SET collection_id = NULL WHERE collection_id = ?1",
+        params![id],
+    )?;
+    conn.execute("DELETE FROM collections WHERE id = ?1", params![id])?;
     Ok(())
 }
 
@@ -280,6 +379,25 @@ pub fn migrate_v1_to_v2(conn: &mut Connection, key: &[u8; KEY_LEN]) -> Result<()
     )?;
 
     set_meta_text(&tx, META_SCHEMA_VERSION, "2")?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn migrate_v2_to_v3(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS collections (
+            id         TEXT PRIMARY KEY,
+            payload    BLOB NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
+        ALTER TABLE items ADD COLUMN collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL;
+        CREATE INDEX IF NOT EXISTS idx_items_collection ON items(collection_id);
+        "#,
+    )?;
+    set_meta_text(&tx, META_SCHEMA_VERSION, "3")?;
     tx.commit()?;
     Ok(())
 }

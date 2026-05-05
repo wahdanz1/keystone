@@ -14,13 +14,14 @@ import { ImportDialog } from "@/features/vault/ImportDialog";
 import { SettingsView } from "@/features/settings/SettingsView";
 import { ClipboardIntroDialog } from "@/features/settings/ClipboardIntroDialog";
 import { useSettings } from "@/lib/settings";
-import type { Item, VaultStatus } from "@/types";
+import type { Collection, Item, VaultStatus } from "@/types";
 
 type View = "vault" | "settings";
 
 export default function App() {
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<View>("vault");
@@ -47,6 +48,7 @@ export default function App() {
 
   const clearStateRef = useRef(() => {
     setItems([]);
+    setCollections([]);
     setSelectedId(null);
     setQuery("");
     setView("vault");
@@ -58,14 +60,22 @@ export default function App() {
     return () => cleanup?.();
   }, []);
 
+  async function refreshAll() {
+    const [itemList, collectionList] = await Promise.all([
+      invoke<Item[]>("items_list"),
+      invoke<Collection[]>("collections_list"),
+    ]);
+    setItems(itemList);
+    setCollections(collectionList);
+  }
+
   async function handleUnlockSubmit(password: string) {
     if (status === "uninitialized") {
       await invoke("vault_create", { password });
     } else {
       await invoke("vault_unlock", { password });
     }
-    const list = await invoke<Item[]>("items_list");
-    setItems(list);
+    await refreshAll();
     setStatus("unlocked");
   }
 
@@ -122,6 +132,7 @@ export default function App() {
         value: data.value,
         notes: data.notes || null,
         tags: data.tags,
+        collectionId: data.collectionId,
       });
     } else {
       const id = await invoke<string>("item_create", {
@@ -130,16 +141,33 @@ export default function App() {
         value: data.value,
         notes: data.notes || null,
         tags: data.tags,
+        collectionId: data.collectionId,
       });
       setSelectedId(id);
     }
-    const list = await invoke<Item[]>("items_list");
-    setItems(list);
+    await refreshAll();
+  }
+
+  async function handleCollectionCreate(name: string): Promise<string> {
+    const id = await invoke<string>("collection_create", { name });
+    const list = await invoke<Collection[]>("collections_list");
+    setCollections(list);
+    return id;
+  }
+
+  async function handleCollectionRename(id: string, name: string) {
+    await invoke("collection_rename", { id, name });
+    setCollections((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
+  }
+
+  async function handleCollectionDelete(id: string) {
+    await invoke("collection_delete", { id });
+    setCollections((prev) => prev.filter((c) => c.id !== id));
+    setItems((prev) => prev.map((it) => (it.collectionId === id ? { ...it, collectionId: null } : it)));
   }
 
   async function handleImported() {
-    const list = await invoke<Item[]>("items_list");
-    setItems(list);
+    await refreshAll();
   }
 
   async function handleImportClick() {
@@ -236,6 +264,7 @@ export default function App() {
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
         <Sidebar
           items={items}
+          collections={collections}
           query={query}
           selectedId={view === "vault" ? selectedId : null}
           copiedId={copiedId}
@@ -246,6 +275,9 @@ export default function App() {
           onLock={handleLock}
           onSettings={() => setView("settings")}
           isSettingsActive={view === "settings"}
+          onCollectionCreate={handleCollectionCreate}
+          onCollectionRename={handleCollectionRename}
+          onCollectionDelete={handleCollectionDelete}
         />
         <main className="flex flex-1 flex-col overflow-hidden">
           {view === "settings" && settings ? (
@@ -280,8 +312,10 @@ export default function App() {
       <ItemFormDialog
         open={formDialog.open}
         item={formDialog.item}
+        collections={collections}
         onClose={() => setFormDialog({ open: false, item: null })}
         onSave={handleSave}
+        onCollectionCreate={handleCollectionCreate}
       />
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
       <ImportDialog
