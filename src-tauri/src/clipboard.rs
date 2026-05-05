@@ -9,9 +9,9 @@
 //! Other platforms always use the Tauri plugin.
 
 use tauri::AppHandle;
-use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(target_os = "windows")]
 use tauri::Manager;
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[cfg(target_os = "windows")]
 mod win {

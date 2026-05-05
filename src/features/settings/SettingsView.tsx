@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { LuArchive, LuArchiveRestore, LuCopy, LuCheck, LuShieldCheck, LuEyeOff, LuInfo, LuX } from "react-icons/lu";
+import { LuArchive, LuArchiveRestore, LuCopy, LuCheck, LuShieldCheck, LuEyeOff, LuInfo, LuX, LuSettings } from "react-icons/lu";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
+import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import {
   Button,
   IconButton,
@@ -32,11 +33,24 @@ export function SettingsView({ settings, onUpdate, onExport, onImport, onClose }
   const [version, setVersion] = useState<string>("");
   const [vaultPath, setVaultPath] = useState<string>("");
   const [pathCopied, setPathCopied] = useState(false);
+  const [autostart, setAutostart] = useState<boolean | null>(null);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion("unknown"));
     invoke<string>("vault_data_dir").then(setVaultPath).catch(() => setVaultPath(""));
+    isAutostartEnabled().then(setAutostart).catch(() => setAutostart(false));
   }, []);
+
+  async function handleAutostartChange(enabled: boolean) {
+    setAutostart(enabled);
+    try {
+      if (enabled) await enableAutostart();
+      else await disableAutostart();
+    } catch {
+      // revert on failure
+      setAutostart(!enabled);
+    }
+  }
 
   async function handleCopyPath() {
     if (!vaultPath) return;
@@ -56,6 +70,28 @@ export function SettingsView({ settings, onUpdate, onExport, onImport, onClose }
 
       <div className="flex-1 overflow-y-auto">
         <div className="flex w-full max-w-4xl flex-col gap-5 p-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <LuSettings className="text-primary" /> General
+              </CardTitle>
+              <CardDescription>Application launch behavior.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              <SettingRow
+                label="Start Keystone when I log in"
+                description="Launches automatically in the background when you sign in to Windows."
+                control={
+                  <Switch
+                    checked={autostart ?? false}
+                    onCheckedChange={handleAutostartChange}
+                    disabled={autostart === null}
+                  />
+                }
+              />
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
