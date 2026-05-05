@@ -211,7 +211,16 @@ export default function App() {
 
   useEffect(() => {
     if (status !== "unlocked") return;
-    const activeItems = query.trim() ? items.filter((it) => matches(it, query)) : items;
+    let activeItems: Item[];
+    if (query.trim()) {
+      activeItems = items.filter((it) => matches(it, query));
+    } else {
+      activeItems = [];
+      for (const c of collections) {
+        activeItems.push(...items.filter((it) => it.collectionId === c.id));
+      }
+      activeItems.push(...items.filter((it) => it.collectionId === null));
+    }
     function handleKey(e: KeyboardEvent) {
       if (formDialog.open || exportOpen || importPath !== null || showClipboardIntro || lockState.warningActive) return;
       const target = e.target as HTMLElement | null;
@@ -237,7 +246,7 @@ export default function App() {
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [items, selectedId, status, query, formDialog.open, exportOpen, importPath, showClipboardIntro, lockState.warningActive]);
+  }, [items, collections, selectedId, status, query, formDialog.open, exportOpen, importPath, showClipboardIntro, lockState.warningActive]);
 
   if (status === null) {
     return (

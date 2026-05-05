@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   LuSearch, LuStar, LuPlus, LuLock, LuSettings, LuCopy, LuCheck, LuX,
   LuChevronRight, LuFolderPlus, LuEllipsisVertical, LuPencil, LuTrash2, LuFileText,
@@ -53,11 +53,13 @@ export function Sidebar({
 }: SidebarProps) {
   const isSearching = query.trim().length > 0;
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([FAVORITES_KEY, UNCATEGORIZED_KEY]));
+  const autoExpandedRef = useRef<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
   const [renaming, setRenaming] = useState<Collection | null>(null);
   const [deleting, setDeleting] = useState<Collection | null>(null);
 
   function toggle(key: string) {
+    autoExpandedRef.current.delete(key);
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -65,6 +67,31 @@ export function Sidebar({
       return next;
     });
   }
+
+  useEffect(() => {
+    if (selectedId === null) return;
+    const item = items.find((it) => it.id === selectedId);
+    if (!item) return;
+    const targetKey = item.collectionId === null ? null : `collection-${item.collectionId}`;
+
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const key of autoExpandedRef.current) {
+        if (key !== targetKey) {
+          next.delete(key);
+          autoExpandedRef.current.delete(key);
+          changed = true;
+        }
+      }
+      if (targetKey !== null && !next.has(targetKey)) {
+        next.add(targetKey);
+        autoExpandedRef.current.add(targetKey);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [selectedId, items]);
 
   const filtered = isSearching ? items.filter((it) => matches(it, query)) : null;
   const favorites = items.filter((it) => it.isFavorite);
