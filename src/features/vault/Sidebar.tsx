@@ -1,4 +1,4 @@
-import { LuSearch, LuStar, LuPlus, LuLock, LuArchive, LuArchiveRestore, LuEllipsisVertical, LuCopy, LuCheck, LuX, LuPowerOff } from "react-icons/lu";
+import { LuSearch, LuStar, LuPlus, LuLock, LuSettings, LuCopy, LuCheck, LuX } from "react-icons/lu";
 import {
   Input,
   IconButton,
@@ -6,11 +6,6 @@ import {
   ListItem,
   ListSection,
   ListSectionLabel,
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { typeIcon } from "./itemType";
@@ -26,12 +21,11 @@ interface SidebarProps {
   onCopy: (item: Item) => void;
   onCreate: () => void;
   onLock: () => void;
-  onExport: () => void;
-  onImport: () => void;
-  onQuit: () => void;
+  onSettings: () => void;
+  isSettingsActive: boolean;
 }
 
-export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onSelect, onCopy, onCreate, onLock, onExport, onImport, onQuit }: SidebarProps) {
+export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onSelect, onCopy, onCreate, onLock, onSettings, isSettingsActive }: SidebarProps) {
   const isSearching = query.trim().length > 0;
   const favorites = items.filter((it) => it.isFavorite);
   const rest = items.filter((it) => !it.isFavorite);
@@ -130,33 +124,13 @@ export function Sidebar({ items, query, selectedId, copiedId, onQueryChange, onS
       <div className="px-3 pb-1.5 pt-1 text-[10px] text-muted-foreground/60">
         <kbd className="font-sans">Ctrl+Tab</kbd> / <kbd className="font-sans">Ctrl+Shift+Tab</kbd> to navigate
       </div>
-      <div className="flex items-center justify-between border-t border-border p-2">
-        <span className="px-2 text-xs text-muted-foreground">
-          {items.length} {items.length === 1 ? "item" : "items"}
-        </span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton aria-label="Vault actions">
-              <LuEllipsisVertical />
-            </IconButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onLock}>
-              <LuLock /> Lock vault
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onImport}>
-              <LuArchiveRestore /> Import backup
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onExport}>
-              <LuArchive /> Export backup
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onQuit}>
-              <LuPowerOff /> Quit Keystone
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex items-center gap-1 border-t border-border p-1.5">
+        <IconButton aria-label="Lock vault" onClick={onLock} fullWidth>
+          <LuLock />
+        </IconButton>
+        <IconButton aria-label="Settings" onClick={onSettings} active={isSettingsActive} fullWidth>
+          <LuSettings />
+        </IconButton>
       </div>
     </aside>
   );

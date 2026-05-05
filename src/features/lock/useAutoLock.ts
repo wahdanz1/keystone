@@ -1,45 +1,109 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const ACTIVITY_EVENTS = ["mousedown", "keydown", "touchstart", "wheel"] as const;
+const TICK_MS = 100;
 
-export function useAutoLock(active: boolean, timeoutMs: number, onLock: () => void) {
-  const timerRef = useRef<number | null>(null);
-  const onLockRef = useRef(onLock);
+export interface AutoLockOptions {
+  active: boolean;
+  autoLockMs: number;
+  showWarning: boolean;
+  warningLeadMs: number;
+  onLock: () => void;
+}
+
+export interface AutoLockState {
+  warningActive: boolean;
+  msRemaining: number;
+  keepUnlocked: () => void;
+  lockNow: () => void;
+}
+
+export function useAutoLock(opts: AutoLockOptions): AutoLockState {
+  const { active, autoLockMs, showWarning, warningLeadMs, onLock } = opts;
+
   const lastActivityRef = useRef(Date.now());
+  const onLockRef = useRef(onLock);
   onLockRef.current = onLock;
+  const warningActiveRef = useRef(false);
+
+  const [warningActive, setWarningActive] = useState(false);
+  const [msRemaining, setMsRemaining] = useState(0);
+
+  const reset = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    warningActiveRef.current = false;
+    setWarningActive(false);
+  }, []);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || autoLockMs <= 0) {
+      warningActiveRef.current = false;
+      setWarningActive(false);
+      return;
+    }
 
-    const reset = () => {
-      lastActivityRef.current = Date.now();
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      timerRef.current = window.setTimeout(() => {
+    lastActivityRef.current = Date.now();
+    warningActiveRef.current = false;
+    setWarningActive(false);
+
+    const tick = () => {
+      const elapsed = Date.now() - lastActivityRef.current;
+      const remaining = autoLockMs - elapsed;
+
+      if (remaining <= 0) {
+        warningActiveRef.current = false;
+        setWarningActive(false);
         onLockRef.current();
-      }, timeoutMs);
+        return;
+      }
+
+      const inWarningWindow = showWarning && remaining <= warningLeadMs;
+      if (inWarningWindow !== warningActiveRef.current) {
+        warningActiveRef.current = inWarningWindow;
+        setWarningActive(inWarningWindow);
+      }
+      if (inWarningWindow) {
+        setMsRemaining(remaining);
+      }
     };
 
-    // After system sleep the tab becomes visible again; check if timeout elapsed while asleep.
+    const onActivity = () => {
+      // During the warning window, ignore passive activity — only an explicit
+      // "Keep unlocked" click extends the session.
+      if (warningActiveRef.current) return;
+      lastActivityRef.current = Date.now();
+    };
+
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        if (Date.now() - lastActivityRef.current >= timeoutMs) {
+        if (Date.now() - lastActivityRef.current >= autoLockMs) {
           onLockRef.current();
         }
       }
     };
 
-    reset();
+    const intervalId = window.setInterval(tick, TICK_MS);
     for (const evt of ACTIVITY_EVENTS) {
-      window.addEventListener(evt, reset, { passive: true });
+      window.addEventListener(evt, onActivity, { passive: true });
     }
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      window.clearInterval(intervalId);
       for (const evt of ACTIVITY_EVENTS) {
-        window.removeEventListener(evt, reset);
+        window.removeEventListener(evt, onActivity);
       }
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [active, timeoutMs]);
+  }, [active, autoLockMs, showWarning, warningLeadMs]);
+
+  const keepUnlocked = useCallback(() => {
+    reset();
+  }, [reset]);
+
+  const lockNow = useCallback(() => {
+    onLockRef.current();
+  }, []);
+
+  return { warningActive, msRemaining, keepUnlocked, lockNow };
 }

@@ -2,22 +2,28 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openFile } from "@tauri-apps/plugin-dialog";
+import { readText as clipboardReadText } from "@tauri-apps/plugin-clipboard-manager";
 import { UnlockScreen } from "@/features/lock/UnlockScreen";
 import { useAutoLock } from "@/features/lock/useAutoLock";
+import { LockWarningOverlay } from "@/features/lock/LockWarningOverlay";
 import { Sidebar, matches } from "@/features/vault/Sidebar";
 import { ItemView } from "@/features/vault/ItemView";
 import { ItemFormDialog, type ItemFormData } from "@/features/vault/ItemFormDialog";
 import { ExportDialog } from "@/features/vault/ExportDialog";
 import { ImportDialog } from "@/features/vault/ImportDialog";
+import { SettingsView } from "@/features/settings/SettingsView";
+import { ClipboardIntroDialog } from "@/features/settings/ClipboardIntroDialog";
+import { useSettings } from "@/lib/settings";
 import type { Item, VaultStatus } from "@/types";
 
-const AUTO_LOCK_MS = 15 * 60 * 1000;
+type View = "vault" | "settings";
 
 export default function App() {
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<View>("vault");
   const [formDialog, setFormDialog] = useState<{ open: boolean; item: Item | null }>({
     open: false,
     item: null,
@@ -25,7 +31,10 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [importPath, setImportPath] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showClipboardIntro, setShowClipboardIntro] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { settings, update: updateSetting } = useSettings();
+
   useEffect(() => () => {
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
   }, []);
@@ -36,11 +45,11 @@ export default function App() {
       .catch(() => setStatus("uninitialized"));
   }, []);
 
-  // Listen for lock events emitted by the system tray "Lock Vault" menu item.
   const clearStateRef = useRef(() => {
     setItems([]);
     setSelectedId(null);
     setQuery("");
+    setView("vault");
     setStatus("locked");
   });
   useEffect(() => {
@@ -65,12 +74,9 @@ export default function App() {
     clearStateRef.current();
   }
 
-  function handleQuit() {
-    invoke("app_quit").catch(() => {});
-  }
-
   async function handleCopy(item: Item) {
-    await navigator.clipboard.writeText(item.value);
+    const copiedValue = item.value;
+    await invoke("clipboard_copy", { text: copiedValue });
     await invoke("item_mark_used", { id: item.id }).catch(() => {});
     setItems((prev) =>
       prev.map((it) =>
@@ -82,9 +88,22 @@ export default function App() {
     setCopiedId(item.id);
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
     copiedTimerRef.current = setTimeout(() => setCopiedId(null), 1500);
-    setTimeout(() => {
-      navigator.clipboard.writeText("").catch(() => {});
-    }, 30_000);
+
+    // Only sensitive types (currently just api_key) auto-clear from the clipboard.
+    const isSensitive = item.kind === "api_key";
+    if (isSensitive && settings?.clipboardAutoClear) {
+      const clearMs = settings.clipboardClearMs;
+      setTimeout(async () => {
+        try {
+          const current = await clipboardReadText();
+          if (current === copiedValue) await invoke("clipboard_clear");
+        } catch { /* clipboard unavailable */ }
+      }, clearMs);
+
+      if (settings && !settings.hasSeenClipboardNotice) {
+        setShowClipboardIntro(true);
+      }
+    }
   }
 
   async function handleToggleFavorite(item: Item) {
@@ -138,15 +157,34 @@ export default function App() {
     if (selectedId === item.id) setSelectedId(null);
   }
 
-  useAutoLock(status === "unlocked", AUTO_LOCK_MS, () => {
-    void handleLock();
+  async function handleAcknowledgeClipboard() {
+    setShowClipboardIntro(false);
+    await updateSetting("hasSeenClipboardNotice", true);
+  }
+
+  async function handleClipboardIntroOpenSettings() {
+    await handleAcknowledgeClipboard();
+    setView("settings");
+  }
+
+  function handleSelectItem(id: string) {
+    setSelectedId(id);
+    setView("vault");
+  }
+
+  const lockState = useAutoLock({
+    active: status === "unlocked" && !!settings,
+    autoLockMs: settings?.autoLockMs ?? 0,
+    showWarning: settings?.showLockWarning ?? true,
+    warningLeadMs: settings?.lockWarningMs ?? 15_000,
+    onLock: () => { void handleLock(); },
   });
 
   useEffect(() => {
     if (status !== "unlocked") return;
     const activeItems = query.trim() ? items.filter((it) => matches(it, query)) : items;
     function handleKey(e: KeyboardEvent) {
-      if (formDialog.open || exportOpen || importPath !== null) return;
+      if (formDialog.open || exportOpen || importPath !== null || showClipboardIntro || lockState.warningActive) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
         return;
@@ -161,7 +199,7 @@ export default function App() {
             : e.shiftKey
               ? (idx === 0 ? activeItems.length - 1 : idx - 1)
               : (idx === activeItems.length - 1 ? 0 : idx + 1);
-        setSelectedId(activeItems[nextIdx].id);
+        handleSelectItem(activeItems[nextIdx].id);
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "c") {
         e.preventDefault();
         const sel = items.find((it) => it.id === selectedId);
@@ -170,7 +208,7 @@ export default function App() {
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [items, selectedId, status, query, formDialog.open, exportOpen, importPath]);
+  }, [items, selectedId, status, query, formDialog.open, exportOpen, importPath, showClipboardIntro, lockState.warningActive]);
 
   if (status === null) {
     return (
@@ -190,6 +228,7 @@ export default function App() {
   }
 
   const selected = items.find((it) => it.id === selectedId) ?? null;
+  const warningTotalMs = settings?.lockWarningMs ?? 15_000;
 
   return (
     <>
@@ -197,31 +236,42 @@ export default function App() {
         <Sidebar
           items={items}
           query={query}
-          selectedId={selectedId}
+          selectedId={view === "vault" ? selectedId : null}
           copiedId={copiedId}
           onQueryChange={setQuery}
-          onSelect={setSelectedId}
+          onSelect={handleSelectItem}
           onCopy={handleCopy}
           onCreate={() => setFormDialog({ open: true, item: null })}
           onLock={handleLock}
-          onExport={() => setExportOpen(true)}
-          onImport={handleImportClick}
-          onQuit={handleQuit}
+          onSettings={() => setView("settings")}
+          isSettingsActive={view === "settings"}
         />
         <main className="flex flex-1 flex-col overflow-hidden">
-          <ItemView
-            item={selected}
-            isCopied={selected ? selected.id === copiedId : false}
-            onCopy={handleCopy}
-            onToggleFavorite={handleToggleFavorite}
-            onEdit={(item) => setFormDialog({ open: true, item })}
-            onDelete={handleDelete}
-            onTagClick={setQuery}
-          />
-          {selected && (
-            <div className="border-t border-border px-4 py-1.5 text-right text-[10px] text-muted-foreground/60">
-              <kbd className="font-sans">Ctrl+Shift+C</kbd> to copy value
-            </div>
+          {view === "settings" && settings ? (
+            <SettingsView
+              settings={settings}
+              onUpdate={updateSetting}
+              onExport={() => setExportOpen(true)}
+              onImport={handleImportClick}
+              onClose={() => setView("vault")}
+            />
+          ) : (
+            <>
+              <ItemView
+                item={selected}
+                isCopied={selected ? selected.id === copiedId : false}
+                onCopy={handleCopy}
+                onToggleFavorite={handleToggleFavorite}
+                onEdit={(item) => setFormDialog({ open: true, item })}
+                onDelete={handleDelete}
+                onTagClick={setQuery}
+              />
+              {selected && (
+                <div className="border-t border-border px-4 py-1.5 text-right text-[10px] text-muted-foreground/60">
+                  <kbd className="font-sans">Ctrl+Shift+C</kbd> to copy value
+                </div>
+              )}
+            </>
           )}
         </main>
       </div>
@@ -238,6 +288,20 @@ export default function App() {
         onClose={() => setImportPath(null)}
         onImported={handleImported}
       />
+      <ClipboardIntroDialog
+        open={showClipboardIntro}
+        clearMs={settings?.clipboardClearMs ?? 30_000}
+        onAcknowledge={handleAcknowledgeClipboard}
+        onOpenSettings={handleClipboardIntroOpenSettings}
+      />
+      {lockState.warningActive && (
+        <LockWarningOverlay
+          msRemaining={lockState.msRemaining}
+          totalMs={warningTotalMs}
+          onKeepUnlocked={lockState.keepUnlocked}
+          onLockNow={lockState.lockNow}
+        />
+      )}
     </>
   );
 }

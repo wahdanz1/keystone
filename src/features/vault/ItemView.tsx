@@ -40,7 +40,8 @@ export function ItemView({ item, isCopied, onCopy, onToggleFavorite, onEdit, onD
 
   return (
     <>
-      <div className="flex flex-1 flex-col overflow-y-auto p-8">
+      <div className="flex flex-1 flex-col overflow-y-auto">
+       <div className="flex max-w-3xl flex-1 flex-col p-8">
         <header className="mb-6 flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <span
@@ -103,6 +104,7 @@ export function ItemView({ item, isCopied, onCopy, onToggleFavorite, onEdit, onD
             ))}
           </div>
         )}
+        </div>
       </div>
 
       <Dialog open={confirmDelete} onOpenChange={(o) => { if (!o) setConfirmDelete(false); }}>
