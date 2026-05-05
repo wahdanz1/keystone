@@ -55,7 +55,7 @@ export function SettingsView({ settings, onUpdate, onExport, onImport, onClose }
       </header>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="flex max-w-3xl flex-col gap-5 p-6">
+        <div className="flex w-full max-w-4xl flex-col gap-5 p-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
