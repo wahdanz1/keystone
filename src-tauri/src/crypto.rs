@@ -38,10 +38,18 @@ pub fn random_bytes<const N: usize>() -> [u8; N] {
     buf
 }
 
-pub fn derive_key(password: &str, salt: &[u8], params: &KdfParams) -> Result<Zeroizing<[u8; KEY_LEN]>> {
-    let argon_params =
-        Params::new(params.m_cost, params.t_cost, ARGON2_PARALLELISM, Some(KEY_LEN))
-            .map_err(|e| VaultError::Kdf(e.to_string()))?;
+pub fn derive_key(
+    password: &str,
+    salt: &[u8],
+    params: &KdfParams,
+) -> Result<Zeroizing<[u8; KEY_LEN]>> {
+    let argon_params = Params::new(
+        params.m_cost,
+        params.t_cost,
+        ARGON2_PARALLELISM,
+        Some(KEY_LEN),
+    )
+    .map_err(|e| VaultError::Kdf(e.to_string()))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
 
     let mut out = Zeroizing::new([0u8; KEY_LEN]);

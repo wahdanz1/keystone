@@ -17,6 +17,12 @@ const iconButtonVariants = cva(
         md: "size-9 [&_svg]:size-[1.125rem]",
         lg: "size-11 [&_svg]:size-5",
       },
+      active: {
+        true: "bg-accent text-accent-foreground",
+      },
+      fullWidth: {
+        true: "w-auto flex-1",
+      },
     },
     defaultVariants: {
       variant: "ghost",
@@ -32,10 +38,10 @@ export interface IconButtonProps
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
-  ({ className, variant, size, ...props }, ref) => (
+  ({ className, variant, size, active, fullWidth, ...props }, ref) => (
     <button
       ref={ref}
-      className={cn(iconButtonVariants({ variant, size }), className)}
+      className={cn(iconButtonVariants({ variant, size, active, fullWidth }), className)}
       {...props}
     />
   ),

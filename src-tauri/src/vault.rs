@@ -9,8 +9,8 @@ use zeroize::Zeroizing;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
 use crate::crypto::{
-    check_verifier, derive_key, make_verifier, open as aead_open, random_bytes, seal,
-    KdfParams, DEFAULT_KDF_PARAMS, KEY_LEN, SALT_LEN,
+    check_verifier, derive_key, make_verifier, open as aead_open, random_bytes, seal, KdfParams,
+    DEFAULT_KDF_PARAMS, KEY_LEN, SALT_LEN,
 };
 use crate::db::{self, Item};
 use crate::error::{Result, VaultError};
@@ -63,13 +63,20 @@ impl VaultState {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
             data_dir,
-            inner: Mutex::new(Inner { conn: None, key: None }),
+            inner: Mutex::new(Inner {
+                conn: None,
+                key: None,
+            }),
             initialized: Mutex::new(None),
         }
     }
 
     fn db_path(&self) -> PathBuf {
         self.data_dir.join(DB_FILENAME)
+    }
+
+    pub fn data_dir(&self) -> &PathBuf {
+        &self.data_dir
     }
 
     fn with_conn<T, F>(&self, f: F) -> Result<T>
@@ -104,7 +111,11 @@ impl VaultState {
         // Check the initialized cache before touching disk.
         let mut init_cache = self.initialized.lock().map_err(|_| VaultError::Locked)?;
         if let Some(is_init) = *init_cache {
-            return Ok(if is_init { VaultStatus::Locked } else { VaultStatus::Uninitialized });
+            return Ok(if is_init {
+                VaultStatus::Locked
+            } else {
+                VaultStatus::Uninitialized
+            });
         }
 
         // First call: probe the DB file.
@@ -116,7 +127,11 @@ impl VaultState {
         let is_init = db::get_meta(&conn, db::META_SALT)?.is_some()
             && db::get_meta(&conn, db::META_VERIFIER)?.is_some();
         *init_cache = Some(is_init);
-        Ok(if is_init { VaultStatus::Locked } else { VaultStatus::Uninitialized })
+        Ok(if is_init {
+            VaultStatus::Locked
+        } else {
+            VaultStatus::Uninitialized
+        })
     }
 
     pub fn create(&self, password: &str) -> Result<()> {
@@ -206,7 +221,9 @@ impl VaultState {
         tags: &[String],
     ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
-        self.with_conn(|conn, key| db::insert_item(conn, key, &id, title, kind, value, notes, tags))?;
+        self.with_conn(|conn, key| {
+            db::insert_item(conn, key, &id, title, kind, value, notes, tags)
+        })?;
         Ok(id)
     }
 
@@ -250,7 +267,9 @@ impl VaultState {
             })
             .collect();
         let count = export_items.len();
-        let payload_json = serde_json::to_vec(&ExportPayload { items: export_items })?;
+        let payload_json = serde_json::to_vec(&ExportPayload {
+            items: export_items,
+        })?;
         let salt: [u8; SALT_LEN] = random_bytes();
         let export_key = derive_key(passphrase, &salt, &DEFAULT_KDF_PARAMS)?;
         let ciphertext = seal(&export_key, &payload_json)?;
@@ -271,12 +290,14 @@ impl VaultState {
         if export_file.version != 1 {
             return Err(VaultError::UnsupportedVersion);
         }
-        let salt_bytes = BASE64.decode(&export_file.salt).map_err(|_| VaultError::CorruptData)?;
-        let ct_bytes =
-            BASE64.decode(&export_file.ciphertext).map_err(|_| VaultError::CorruptData)?;
+        let salt_bytes = BASE64
+            .decode(&export_file.salt)
+            .map_err(|_| VaultError::CorruptData)?;
+        let ct_bytes = BASE64
+            .decode(&export_file.ciphertext)
+            .map_err(|_| VaultError::CorruptData)?;
         let export_key = derive_key(passphrase, &salt_bytes, &export_file.kdf)?;
-        let plaintext =
-            aead_open(&export_key, &ct_bytes).map_err(|_| VaultError::BadPassword)?;
+        let plaintext = aead_open(&export_key, &ct_bytes).map_err(|_| VaultError::BadPassword)?;
         let payload: ExportPayload =
             serde_json::from_slice(&plaintext).map_err(|_| VaultError::CorruptData)?;
         let count = payload.items.len();
@@ -285,8 +306,14 @@ impl VaultState {
             for item in &payload.items {
                 let id = uuid::Uuid::new_v4().to_string();
                 db::insert_item(
-                    &tx, key, &id, &item.title, &item.kind, &item.value,
-                    item.notes.as_deref(), &item.tags,
+                    &tx,
+                    key,
+                    &id,
+                    &item.title,
+                    &item.kind,
+                    &item.value,
+                    item.notes.as_deref(),
+                    &item.tags,
                 )?;
             }
             tx.commit()?;

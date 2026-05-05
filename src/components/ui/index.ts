@@ -3,6 +3,7 @@ export { IconButton, type IconButtonProps } from "./IconButton";
 export { Input, type InputProps } from "./Input";
 export { Textarea, type TextareaProps } from "./Textarea";
 export { Select, type SelectProps } from "./Select";
+export { Switch, type SwitchProps } from "./Switch";
 export { Label } from "./Label";
 export {
   Card,

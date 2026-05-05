@@ -1,3 +1,4 @@
+mod clipboard;
 mod crypto;
 mod db;
 mod error;
@@ -105,14 +106,15 @@ fn vault_import(state: VaultStateRef<'_>, path: String, passphrase: String) -> R
 }
 
 #[tauri::command]
-fn app_quit(app: tauri::AppHandle, state: VaultStateRef<'_>) {
-    state.lock().ok();
-    app.exit(0);
+fn vault_data_dir(state: VaultStateRef<'_>) -> String {
+    state.data_dir().to_string_lossy().into_owned()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -136,7 +138,8 @@ pub fn run() {
             app.global_shortcut().register("CmdOrCtrl+Shift+K")?;
 
             // System tray
-            let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide Keystone", true, None::<&str>)?;
+            let show_hide =
+                MenuItem::with_id(app, "show_hide", "Show / Hide Keystone", true, None::<&str>)?;
             let lock = MenuItem::with_id(app, "lock", "Lock Vault", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_hide, &lock, &quit])?;
@@ -193,7 +196,9 @@ pub fn run() {
             item_mark_used,
             vault_export,
             vault_import,
-            app_quit,
+            vault_data_dir,
+            clipboard::clipboard_copy,
+            clipboard::clipboard_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
