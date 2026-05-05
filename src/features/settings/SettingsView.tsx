@@ -119,10 +119,16 @@ export function SettingsView({ settings, onUpdate, onExport, onImport, onClose }
                   </Select>
                 }
               />
-              <p className="text-xs text-muted-foreground">
-                Note: Windows clipboard history (Win+V), if enabled, may retain copied values. Disable it in Windows
-                Settings → System → Clipboard for full protection.
-              </p>
+              <SettingRow
+                label="Allow non-sensitive copies in clipboard history"
+                description="Lets snippets, commands, and notes appear in Windows clipboard history (Win+V). API keys are always excluded."
+                control={
+                  <Switch
+                    checked={settings.allowNonSensitiveInHistory}
+                    onCheckedChange={(v) => onUpdate("allowNonSensitiveInHistory", v)}
+                  />
+                }
+              />
             </CardContent>
           </Card>
 

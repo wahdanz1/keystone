@@ -76,7 +76,9 @@ export default function App() {
 
   async function handleCopy(item: Item) {
     const copiedValue = item.value;
-    await invoke("clipboard_copy", { text: copiedValue });
+    const isSensitive = item.kind === "api_key";
+    const excludeFromHistory = isSensitive || !(settings?.allowNonSensitiveInHistory ?? false);
+    await invoke("clipboard_copy", { text: copiedValue, excludeFromHistory });
     await invoke("item_mark_used", { id: item.id }).catch(() => {});
     setItems((prev) =>
       prev.map((it) =>
@@ -90,7 +92,6 @@ export default function App() {
     copiedTimerRef.current = setTimeout(() => setCopiedId(null), 1500);
 
     // Only sensitive types (currently just api_key) auto-clear from the clipboard.
-    const isSensitive = item.kind === "api_key";
     if (isSensitive && settings?.clipboardAutoClear) {
       const clearMs = settings.clipboardClearMs;
       setTimeout(async () => {

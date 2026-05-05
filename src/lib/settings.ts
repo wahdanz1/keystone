@@ -7,6 +7,7 @@ export interface Settings {
   lockWarningMs: number;
   clipboardAutoClear: boolean;
   clipboardClearMs: number;
+  allowNonSensitiveInHistory: boolean;
   hasSeenClipboardNotice: boolean;
 }
 
@@ -16,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lockWarningMs: 15 * 1000,
   clipboardAutoClear: true,
   clipboardClearMs: 30 * 1000,
+  allowNonSensitiveInHistory: false,
   hasSeenClipboardNotice: false,
 };
 
