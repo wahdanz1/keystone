@@ -6,7 +6,7 @@ A local-first desktop vault for API keys, dev snippets, commands, and reference 
 
 ### Security
 - **Encrypted at rest** — ChaCha20-Poly1305 per-record encryption with Argon2id key derivation. Master password never leaves your machine.
-- **Per-record sealing** — every item's title, value, notes, and tags are sealed individually; only metadata (timestamps, favorites, kind) is plaintext.
+- **Per-record sealing** — every item's title, value, notes, and tags are sealed individually; only metadata (timestamps, favorites, kind, sensitivity flag, collection) is plaintext.
 - **Auto-lock on inactivity** — configurable timeout (5 min / 15 min / 30 min / 1 h, plus a 30 s dev option). Optional countdown warning blurs the app and requires an explicit "Keep unlocked" click — passive mouse activity does not extend the session.
 - **Sleep-aware** — checks elapsed time on system wake, locks if the timeout passed during sleep.
 - **Master password gate** — unlock is required after every lock; password strength meter shown when creating a new vault.
@@ -17,16 +17,25 @@ A local-first desktop vault for API keys, dev snippets, commands, and reference 
 
 ### Clipboard
 - **Win+V exclusion (Windows)** — copied values are tagged with the documented `CanIncludeInClipboardHistory = 0` format, so they don't appear in Windows clipboard history. Best-effort with automatic fallback to the Tauri clipboard plugin if the Win32 path errors.
-- **Type-aware auto-clear** — API keys are wiped from the clipboard after a configurable delay (15 s / 30 s / 1 m / 2 m). Snippets, commands, and notes stay in the clipboard so you can paste them multiple times.
-- **Smart clear** — if you copy something else within the timeout, the timer reads the clipboard and skips wiping if your new copy doesn't match the API key.
-- **Optional toggle** — "Allow non-sensitive copies in clipboard history" lets snippets/commands/notes appear in Win+V if you prefer (default off; API keys are always excluded regardless).
+- **Sensitivity-aware auto-clear** — values from items marked sensitive are wiped from the clipboard after a configurable delay (15 s / 30 s / 1 m / 2 m). Non-sensitive copies stay in the clipboard so you can paste them multiple times.
+- **Smart clear** — if you copy something else within the timeout, the timer reads the clipboard and skips wiping if your new copy doesn't match the sensitive value.
+- **Optional toggle** — "Allow non-sensitive copies in clipboard history" lets non-sensitive items appear in Win+V if you prefer (default off; sensitive items are always excluded regardless).
 
 ### Item types
-- **API key** — masked by default with a reveal toggle; auto-clears on copy
+- **API key** — single secret value
+- **`.env` file** — multi-line key/value blocks
+- **Recovery codes** — backup/2FA code lists
 - **Snippet** — multi-line code/text
 - **Command** — shell commands
 - **Note** — free-form text
-- Items support tags, favorites, and notes; type icons in the sidebar.
+- Items support tags, favorites, notes, and a single collection; type icons in the sidebar.
+
+### Sensitivity
+- **Per-item "sensitive" flag** — decoupled from type. Sensitive items are masked in view (with a reveal toggle), excluded from Win+V history, and auto-cleared from the clipboard.
+- **Sensible defaults** — API keys, `.env` files, and recovery codes default to sensitive; snippets, commands, and notes don't. Override per item.
+
+### Organization
+- **Collections** — group items into a single collection each; the sidebar lists collections with the current one auto-expanded.
 
 ### Backups
 - **Encrypted `.kvault` exports** — separate passphrase, ChaCha20-Poly1305 sealed JSON. Import merges into the current vault.
@@ -35,7 +44,7 @@ A local-first desktop vault for API keys, dev snippets, commands, and reference 
 ### Quality of life
 - **System tray** with Show/Hide, Lock Vault, Quit
 - **Global hotkey** `Ctrl+Shift+K` (Windows/Linux) / `Cmd+Shift+K` (macOS) summons the window from anywhere
-- **In-app hotkeys**: `Ctrl+Tab` / `Ctrl+Shift+Tab` to cycle items (respects active filter), `Ctrl+Shift+C` to copy the selected item
+- **In-app hotkeys**: `Ctrl+Tab` / `Ctrl+Shift+Tab` to cycle items (follows sidebar order), `Ctrl+Shift+C` to copy the selected item
 - **Search** — filters across title, value, notes, tags, and item type (`command`, `api key`, etc.)
 - **Sort** — alphabetical (case-insensitive); favorites pinned to a top section
 - **Autostart** — optional toggle to launch Keystone on login (Windows registry Run key)
