@@ -1,4 +1,4 @@
-export type ItemKind = "api_key" | "snippet" | "command" | "note";
+export type ItemKind = "api_key" | "snippet" | "command" | "note" | "env_file" | "recovery_codes";
 
 export interface Item {
   id: string;

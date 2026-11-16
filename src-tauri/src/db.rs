@@ -72,7 +72,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
 
         CREATE TABLE IF NOT EXISTS items (
             id            TEXT PRIMARY KEY,
-            kind          TEXT NOT NULL CHECK (kind IN ('api_key','snippet','command','note')),
+            kind          TEXT NOT NULL,
             payload       BLOB NOT NULL,
             is_favorite   INTEGER NOT NULL DEFAULT 0,
             is_sensitive  INTEGER NOT NULL DEFAULT 0,
@@ -87,7 +87,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_items_collection ON items(collection_id);
         "#,
     )?;
-    set_meta_text(conn, META_SCHEMA_VERSION, "4")?;
+    set_meta_text(conn, META_SCHEMA_VERSION, "5")?;
     Ok(())
 }
 
@@ -422,10 +422,121 @@ pub fn migrate_v3_to_v4(conn: &mut Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn migrate_v4_to_v5(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute_batch(
+        r#"
+        CREATE TABLE items_new (
+            id            TEXT PRIMARY KEY,
+            kind          TEXT NOT NULL,
+            payload       BLOB NOT NULL,
+            is_favorite   INTEGER NOT NULL DEFAULT 0,
+            is_sensitive  INTEGER NOT NULL DEFAULT 0,
+            collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
+            created_at    INTEGER NOT NULL,
+            updated_at    INTEGER NOT NULL,
+            last_used_at  INTEGER,
+            copy_count    INTEGER NOT NULL DEFAULT 0
+        );
+
+        INSERT INTO items_new (id, kind, payload, is_favorite, is_sensitive, collection_id, created_at, updated_at, last_used_at, copy_count)
+        SELECT id, kind, payload, is_favorite, is_sensitive, collection_id, created_at, updated_at, last_used_at, copy_count
+        FROM items;
+
+        DROP TABLE items;
+        ALTER TABLE items_new RENAME TO items;
+
+        CREATE INDEX IF NOT EXISTS idx_items_favorite ON items(is_favorite);
+        CREATE INDEX IF NOT EXISTS idx_items_collection ON items(collection_id);
+        "#,
+    )?;
+    set_meta_text(&tx, META_SCHEMA_VERSION, "5")?;
+    tx.commit()?;
+    Ok(())
+}
+
 fn unix_millis() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a v4-shape items table (with the old kind CHECK constraint) and
+    /// some rows, then run the v4→v5 migration and assert nothing was lost.
+    #[test]
+    fn migrate_v4_to_v5_preserves_data_and_drops_check() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value BLOB NOT NULL);
+            CREATE TABLE collections (id TEXT PRIMARY KEY, payload BLOB NOT NULL, created_at INTEGER NOT NULL);
+            CREATE TABLE items (
+                id            TEXT PRIMARY KEY,
+                kind          TEXT NOT NULL CHECK (kind IN ('api_key','snippet','command','note')),
+                payload       BLOB NOT NULL,
+                is_favorite   INTEGER NOT NULL DEFAULT 0,
+                is_sensitive  INTEGER NOT NULL DEFAULT 0,
+                collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
+                created_at    INTEGER NOT NULL,
+                updated_at    INTEGER NOT NULL,
+                last_used_at  INTEGER,
+                copy_count    INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT INTO meta(key, value) VALUES ('schema_version', '4');
+            INSERT INTO collections(id, payload, created_at) VALUES ('c1', x'00', 1);
+            INSERT INTO items(id, kind, payload, is_favorite, is_sensitive, collection_id, created_at, updated_at, last_used_at, copy_count)
+                VALUES ('i1', 'api_key', x'01', 1, 1, 'c1', 10, 20, 99, 5);
+            INSERT INTO items(id, kind, payload, is_favorite, is_sensitive, collection_id, created_at, updated_at, last_used_at, copy_count)
+                VALUES ('i2', 'note', x'02', 0, 0, NULL, 11, 21, NULL, 0);
+            "#,
+        )
+        .unwrap();
+
+        migrate_v4_to_v5(&mut conn).unwrap();
+
+        let version: Vec<u8> = conn
+            .query_row("SELECT value FROM meta WHERE key='schema_version'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, b"5");
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 2);
+
+        let (kind, fav, sens, coll, last_used, copies): (String, i64, i64, Option<String>, Option<i64>, i64) = conn
+            .query_row(
+                "SELECT kind, is_favorite, is_sensitive, collection_id, last_used_at, copy_count FROM items WHERE id='i1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, "api_key");
+        assert_eq!(fav, 1);
+        assert_eq!(sens, 1);
+        assert_eq!(coll, Some("c1".to_string()));
+        assert_eq!(last_used, Some(99));
+        assert_eq!(copies, 5);
+
+        // The CHECK constraint should be gone — a new kind must insert cleanly.
+        conn.execute(
+            "INSERT INTO items(id, kind, payload, is_favorite, is_sensitive, created_at, updated_at, copy_count)
+             VALUES ('i3', 'env_file', x'03', 0, 1, 12, 22, 0)",
+            [],
+        )
+        .unwrap();
+
+        // ON DELETE SET NULL must still fire after the rebuild.
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        conn.execute("DELETE FROM collections WHERE id='c1'", []).unwrap();
+        let orphan: Option<String> = conn
+            .query_row("SELECT collection_id FROM items WHERE id='i1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(orphan, None);
+    }
 }

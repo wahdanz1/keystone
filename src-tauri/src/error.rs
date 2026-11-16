@@ -27,6 +27,8 @@ pub enum VaultError {
     CorruptData,
     #[error("export file version is not supported")]
     UnsupportedVersion,
+    #[error("invalid file path")]
+    InvalidPath,
 }
 
 impl Serialize for VaultError {

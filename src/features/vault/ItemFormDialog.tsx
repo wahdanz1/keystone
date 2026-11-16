@@ -11,6 +11,7 @@ import {
   Input,
   Label,
   Select,
+  SelectItem,
   Switch,
   Textarea,
 } from "@/components/ui";
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
 import type { Collection, Item, ItemKind } from "@/types";
 
 const NEW_COLLECTION_VALUE = "__new__";
+const NONE_VALUE = "__none__";
 
 export interface ItemFormData {
   title: string;
@@ -30,7 +32,20 @@ export interface ItemFormData {
 }
 
 function defaultSensitiveFor(kind: ItemKind): boolean {
-  return kind === "api_key";
+  return kind === "api_key" || kind === "env_file" || kind === "recovery_codes";
+}
+
+function defaultRowsFor(kind: ItemKind): number {
+  switch (kind) {
+    case "snippet":
+    case "command":
+      return 5;
+    case "env_file":
+    case "recovery_codes":
+      return 10;
+    default:
+      return 2;
+  }
 }
 
 interface ItemFormDialogProps {
@@ -86,7 +101,7 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
       setNewCollectionOpen(true);
       return;
     }
-    setCollectionId(value === "" ? null : value);
+    setCollectionId(value === NONE_VALUE ? null : value);
   }
 
   async function handleCreateCollection() {
@@ -141,13 +156,15 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
               <Select
                 id="item-kind"
                 value={kind}
-                onChange={(e) => handleKindChange(e.currentTarget.value as ItemKind)}
+                onValueChange={(v) => handleKindChange(v as ItemKind)}
                 disabled={isPending}
               >
-                <option value="api_key">API Key</option>
-                <option value="snippet">Snippet</option>
-                <option value="command">Command</option>
-                <option value="note">Note</option>
+                <SelectItem value="api_key">API Key</SelectItem>
+                <SelectItem value="snippet">Snippet</SelectItem>
+                <SelectItem value="command">Command</SelectItem>
+                <SelectItem value="note">Note</SelectItem>
+                <SelectItem value="env_file">.env file</SelectItem>
+                <SelectItem value="recovery_codes">Recovery codes</SelectItem>
               </Select>
             </div>
 
@@ -184,7 +201,7 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
                 value={value}
                 onChange={(e) => setValue(e.currentTarget.value)}
                 disabled={isPending}
-                rows={kind === "snippet" || kind === "command" ? 5 : 2}
+                rows={defaultRowsFor(kind)}
                 className={cn(
                   kind !== "note" && "font-mono",
                   isSensitive && "pr-11",
@@ -273,15 +290,15 @@ export function ItemFormDialog({ open, item, collections, onClose, onSave, onCol
             ) : (
               <Select
                 id="item-collection"
-                value={collectionId ?? ""}
-                onChange={(e) => handleCollectionSelect(e.currentTarget.value)}
+                value={collectionId ?? NONE_VALUE}
+                onValueChange={handleCollectionSelect}
                 disabled={isPending}
               >
-                <option value="">None (Uncategorized)</option>
+                <SelectItem value={NONE_VALUE}>None (Uncategorized)</SelectItem>
                 {collections.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                 ))}
-                <option value={NEW_COLLECTION_VALUE}>+ Create new collection…</option>
+                <SelectItem value={NEW_COLLECTION_VALUE}>+ Create new collection…</SelectItem>
               </Select>
             )}
           </div>
@@ -308,5 +325,7 @@ function valuePlaceholder(kind: ItemKind): string {
     case "snippet": return "const x = …";
     case "command": return "docker run …";
     case "note": return "Notes or reference text…";
+    case "env_file": return "DB_HOST=localhost\nDB_PORT=5432\nOPENAI_KEY=sk-…";
+    case "recovery_codes": return "3F4G-12HD-ASD9\nKL90-VBN3-RT44\nJKL5-NM78-OP12";
   }
 }

@@ -26,10 +26,9 @@ pub struct KdfParams {
     pub t_cost: u32,
 }
 
-/// Tuned for ~1s desktop unlock. Above OWASP minimum (19 MiB / 2 iter).
 pub const DEFAULT_KDF_PARAMS: KdfParams = KdfParams {
-    m_cost: 32 * 1024,
-    t_cost: 2,
+    m_cost: 64 * 1024,
+    t_cost: 3,
 };
 
 pub fn random_bytes<const N: usize>() -> [u8; N] {

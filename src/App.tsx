@@ -84,8 +84,8 @@ export default function App() {
     clearStateRef.current();
   }
 
-  async function handleCopy(item: Item) {
-    const copiedValue = item.value;
+  async function handleCopy(item: Item, override?: string) {
+    const copiedValue = override ?? item.value;
     const isSensitive = item.isSensitive;
     const excludeFromHistory = isSensitive || !(settings?.allowNonSensitiveInHistory ?? false);
     await invoke("clipboard_copy", { text: copiedValue, excludeFromHistory });

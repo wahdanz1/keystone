@@ -12,6 +12,7 @@ use tauri::{
     Emitter, Manager, State,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use zeroize::Zeroizing;
 
 use crate::db::{Collection, Item};
 use crate::error::Result;
@@ -37,12 +38,14 @@ fn vault_status(state: VaultStateRef<'_>) -> Result<VaultStatus> {
 
 #[tauri::command]
 fn vault_create(state: VaultStateRef<'_>, password: String) -> Result<()> {
-    state.create(&password)
+    let password = Zeroizing::new(password);
+    state.create(password.as_str())
 }
 
 #[tauri::command]
 fn vault_unlock(state: VaultStateRef<'_>, password: String) -> Result<()> {
-    state.unlock(&password)
+    let password = Zeroizing::new(password);
+    state.unlock(password.as_str())
 }
 
 #[tauri::command]
@@ -138,12 +141,14 @@ fn item_mark_used(state: VaultStateRef<'_>, id: String) -> Result<()> {
 
 #[tauri::command]
 fn vault_export(state: VaultStateRef<'_>, path: String, passphrase: String) -> Result<usize> {
-    state.export_vault(&path, &passphrase)
+    let passphrase = Zeroizing::new(passphrase);
+    state.export_vault(&path, passphrase.as_str())
 }
 
 #[tauri::command]
 fn vault_import(state: VaultStateRef<'_>, path: String, passphrase: String) -> Result<usize> {
-    state.import_vault(&path, &passphrase)
+    let passphrase = Zeroizing::new(passphrase);
+    state.import_vault(&path, passphrase.as_str())
 }
 
 #[tauri::command]

@@ -13,6 +13,7 @@ import {
   CardContent,
   Label,
   Select,
+  SelectItem,
   Switch,
 } from "@/components/ui";
 import {
@@ -106,11 +107,11 @@ export function SettingsView({ settings, onUpdate, onExport, onImport, onClose }
                 control={
                   <Select
                     value={String(settings.autoLockMs)}
-                    onChange={(e) => onUpdate("autoLockMs", Number(e.currentTarget.value))}
-                    className="w-40"
+                    onValueChange={(v) => onUpdate("autoLockMs", Number(v))}
+                    className="w-44"
                   >
                     {AUTO_LOCK_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
                     ))}
                   </Select>
                 }
@@ -145,12 +146,12 @@ export function SettingsView({ settings, onUpdate, onExport, onImport, onClose }
                 control={
                   <Select
                     value={String(settings.clipboardClearMs)}
-                    onChange={(e) => onUpdate("clipboardClearMs", Number(e.currentTarget.value))}
+                    onValueChange={(v) => onUpdate("clipboardClearMs", Number(v))}
                     disabled={!settings.clipboardAutoClear}
-                    className="w-40"
+                    className="w-44"
                   >
                     {CLIPBOARD_CLEAR_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
                     ))}
                   </Select>
                 }

@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rusqlite::Connection;
@@ -28,6 +29,8 @@ struct ExportFile {
 #[derive(Serialize, Deserialize)]
 struct ExportPayload {
     items: Vec<ExportItem>,
+    #[serde(default)]
+    collections: Vec<ExportCollection>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -37,6 +40,16 @@ struct ExportItem {
     value: String,
     notes: Option<String>,
     tags: Vec<String>,
+    // Absent in v1 exports → defaulted from kind on import.
+    #[serde(default)]
+    is_sensitive: Option<bool>,
+    #[serde(default)]
+    collection_name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExportCollection {
+    name: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -50,8 +63,6 @@ pub enum VaultStatus {
 pub struct VaultState {
     data_dir: PathBuf,
     inner: Mutex<Inner>,
-    /// Cached result of the DB initialization probe. None = not yet checked.
-    initialized: Mutex<Option<bool>>,
 }
 
 struct Inner {
@@ -67,7 +78,6 @@ impl VaultState {
                 conn: None,
                 key: None,
             }),
-            initialized: Mutex::new(None),
         }
     }
 
@@ -107,32 +117,18 @@ impl VaultState {
     }
 
     pub fn status(&self) -> Result<VaultStatus> {
-        // Fast path: already unlocked.
         let inner = self.inner.lock().map_err(|_| VaultError::Locked)?;
         if inner.conn.is_some() && inner.key.is_some() {
             return Ok(VaultStatus::Unlocked);
         }
         drop(inner);
 
-        // Check the initialized cache before touching disk.
-        let mut init_cache = self.initialized.lock().map_err(|_| VaultError::Locked)?;
-        if let Some(is_init) = *init_cache {
-            return Ok(if is_init {
-                VaultStatus::Locked
-            } else {
-                VaultStatus::Uninitialized
-            });
-        }
-
-        // First call: probe the DB file.
         if !self.db_path().exists() {
-            *init_cache = Some(false);
             return Ok(VaultStatus::Uninitialized);
         }
         let conn = Connection::open(self.db_path())?;
         let is_init = db::get_meta(&conn, db::META_SALT)?.is_some()
             && db::get_meta(&conn, db::META_VERIFIER)?.is_some();
-        *init_cache = Some(is_init);
         Ok(if is_init {
             VaultStatus::Locked
         } else {
@@ -163,9 +159,6 @@ impl VaultState {
         db::set_meta(&conn, db::META_SALT, &salt)?;
         db::set_meta(&conn, db::META_VERIFIER, &verifier)?;
         db::set_meta(&conn, db::META_KDF_PARAMS, &serde_json::to_vec(&kdf)?)?;
-
-        let mut init_cache = self.initialized.lock().map_err(|_| VaultError::Locked)?;
-        *init_cache = Some(true);
 
         let mut inner = self.inner.lock().map_err(|_| VaultError::Locked)?;
         inner.conn = Some(conn);
@@ -209,9 +202,12 @@ impl VaultState {
         if version == "3" {
             db::migrate_v3_to_v4(&mut conn)?;
         }
-
-        let mut init_cache = self.initialized.lock().map_err(|_| VaultError::Locked)?;
-        *init_cache = Some(true);
+        let version = db::get_meta(&conn, db::META_SCHEMA_VERSION)?
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
+        if version == "4" {
+            db::migrate_v4_to_v5(&mut conn)?;
+        }
 
         let mut inner = self.inner.lock().map_err(|_| VaultError::Locked)?;
         inner.conn = Some(conn);
@@ -319,7 +315,13 @@ impl VaultState {
         if passphrase.len() < 8 {
             return Err(VaultError::PasswordTooShort);
         }
+        validate_export_path(path)?;
         let items = self.list_items()?;
+        let collections = self.list_collections()?;
+        let id_to_name: HashMap<String, String> = collections
+            .iter()
+            .map(|c| (c.id.clone(), c.name.clone()))
+            .collect();
         let export_items: Vec<ExportItem> = items
             .into_iter()
             .map(|it| ExportItem {
@@ -328,17 +330,26 @@ impl VaultState {
                 value: it.value,
                 notes: it.notes,
                 tags: it.tags,
+                is_sensitive: Some(it.is_sensitive),
+                collection_name: it
+                    .collection_id
+                    .and_then(|cid| id_to_name.get(&cid).cloned()),
             })
+            .collect();
+        let export_collections: Vec<ExportCollection> = collections
+            .into_iter()
+            .map(|c| ExportCollection { name: c.name })
             .collect();
         let count = export_items.len();
         let payload_json = serde_json::to_vec(&ExportPayload {
             items: export_items,
+            collections: export_collections,
         })?;
         let salt: [u8; SALT_LEN] = random_bytes();
         let export_key = derive_key(passphrase, &salt, &DEFAULT_KDF_PARAMS)?;
         let ciphertext = seal(&export_key, &payload_json)?;
         let export_file = ExportFile {
-            version: 1,
+            version: 2,
             kdf: DEFAULT_KDF_PARAMS,
             salt: BASE64.encode(salt),
             ciphertext: BASE64.encode(&ciphertext),
@@ -348,10 +359,11 @@ impl VaultState {
     }
 
     pub fn import_vault(&self, path: &str, passphrase: &str) -> Result<usize> {
+        validate_import_path(path)?;
         let data = fs::read_to_string(path)?;
         let export_file: ExportFile =
             serde_json::from_str(&data).map_err(|_| VaultError::CorruptData)?;
-        if export_file.version != 1 {
+        if export_file.version != 1 && export_file.version != 2 {
             return Err(VaultError::UnsupportedVersion);
         }
         let salt_bytes = BASE64
@@ -367,9 +379,39 @@ impl VaultState {
         let count = payload.items.len();
         self.with_conn_mut(|conn, key| {
             let tx = conn.transaction()?;
+
+            // Map collection name -> id, reusing collections that already exist
+            // in the current vault so imports merge rather than duplicate.
+            let mut name_to_id: HashMap<String, String> = db::list_collections(&tx, key)?
+                .into_iter()
+                .map(|c| (c.name, c.id))
+                .collect();
+            let ensure_collection = |tx: &rusqlite::Transaction,
+                                      name: &str,
+                                      map: &mut HashMap<String, String>|
+             -> Result<String> {
+                if let Some(id) = map.get(name) {
+                    return Ok(id.clone());
+                }
+                let id = uuid::Uuid::new_v4().to_string();
+                db::insert_collection(tx, key, &id, name)?;
+                map.insert(name.to_string(), id.clone());
+                Ok(id)
+            };
+
+            for ec in &payload.collections {
+                ensure_collection(&tx, &ec.name, &mut name_to_id)?;
+            }
+
             for item in &payload.items {
                 let id = uuid::Uuid::new_v4().to_string();
-                let is_sensitive = item.kind == "api_key";
+                let is_sensitive = item
+                    .is_sensitive
+                    .unwrap_or_else(|| default_sensitive_for_kind(&item.kind));
+                let collection_id = match &item.collection_name {
+                    Some(name) => Some(ensure_collection(&tx, name, &mut name_to_id)?),
+                    None => None,
+                };
                 db::insert_item(
                     &tx,
                     key,
@@ -379,7 +421,7 @@ impl VaultState {
                     &item.value,
                     item.notes.as_deref(),
                     &item.tags,
-                    None,
+                    collection_id.as_deref(),
                     is_sensitive,
                 )?;
             }
@@ -388,4 +430,36 @@ impl VaultState {
         })?;
         Ok(count)
     }
+}
+
+fn default_sensitive_for_kind(kind: &str) -> bool {
+    matches!(kind, "api_key" | "env_file" | "recovery_codes")
+}
+
+const EXPORT_EXTENSION: &str = "kvault";
+
+fn has_kvault_extension(p: &Path) -> bool {
+    p.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case(EXPORT_EXTENSION))
+        .unwrap_or(false)
+}
+
+fn validate_export_path(path: &str) -> Result<()> {
+    let p = Path::new(path);
+    if !p.is_absolute() || !has_kvault_extension(p) {
+        return Err(VaultError::InvalidPath);
+    }
+    match p.parent() {
+        Some(parent) if parent.as_os_str().is_empty() || parent.is_dir() => Ok(()),
+        _ => Err(VaultError::InvalidPath),
+    }
+}
+
+fn validate_import_path(path: &str) -> Result<()> {
+    let p = Path::new(path);
+    if !p.is_absolute() || !has_kvault_extension(p) || !p.is_file() {
+        return Err(VaultError::InvalidPath);
+    }
+    Ok(())
 }
