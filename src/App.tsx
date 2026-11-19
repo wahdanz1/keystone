@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openFile } from "@tauri-apps/plugin-dialog";
 import { readText as clipboardReadText } from "@tauri-apps/plugin-clipboard-manager";
 import { UnlockScreen } from "@/features/lock/UnlockScreen";
+import { StatusErrorScreen } from "@/features/lock/StatusErrorScreen";
 import { useAutoLock } from "@/features/lock/useAutoLock";
 import { LockWarningOverlay } from "@/features/lock/LockWarningOverlay";
 import { Sidebar, matches } from "@/features/vault/Sidebar";
@@ -20,6 +21,7 @@ type View = "vault" | "settings";
 
 export default function App() {
   const [status, setStatus] = useState<VaultStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -40,10 +42,17 @@ export default function App() {
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
   }, []);
 
+  async function loadStatus() {
+    try {
+      setStatus(await invoke<VaultStatus>("vault_status"));
+      setStatusError(null);
+    } catch (err) {
+      setStatusError(typeof err === "string" ? err : err instanceof Error ? err.message : String(err));
+    }
+  }
+
   useEffect(() => {
-    invoke<VaultStatus>("vault_status")
-      .then(setStatus)
-      .catch(() => setStatus("uninitialized"));
+    loadStatus();
   }, []);
 
   const clearStateRef = useRef(() => {
@@ -249,6 +258,10 @@ export default function App() {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [items, collections, selectedId, status, query, formDialog.open, exportOpen, importPath, showClipboardIntro, lockState.warningActive]);
+
+  if (statusError !== null && status === null) {
+    return <StatusErrorScreen message={statusError} onRetry={loadStatus} />;
+  }
 
   if (status === null) {
     return (
